@@ -29,7 +29,7 @@ Konventionen für alle Tasks:
 ## M0 – Projekt-Setup
 
 - [ ] **0.1 Gradle-Projekt anlegen**
-  - Gradle-Wrapper (aktuelle stabile Version, läuft mit dem lokalen JDK 25), Kotlin-Multiplatform-Plugin, Targets `macosArm64`, `macosX64`, `linuxX64`, Source-Set `posixMain` (design §3).
+  - Gradle-Wrapper (aktuelle stabile Version, läuft mit dem lokalen JDK 25), Kotlin-Multiplatform-Plugin, Targets `macosArm64`, `linuxX64`, gemeinsames Source-Set `nativeMain` (design §3).
   - `gradle/libs.versions.toml` mit gepinnten Versionen: Kotlin, kotlinx-serialization-json, Okio (inkl. `okio-fakefilesystem` für Tests).
   - Package `de.kmob`, `Main.kt` gibt `kmob <version>` aus.
   - Version aus `gradle.properties`, generierte `BuildInfo.kt` (design §9).
@@ -216,9 +216,9 @@ Reihenfolge innerhalb des Meilensteins je nach Ergebnis von 2.13.
 ## M8 – CI und Release v0.1.0
 
 - [ ] **8.1 CI vollständig** – R8.1, design §9
-  - macOS: Tests `macosArm64`, Link `macosX64`, E2E mit mob und gitleaks (Homebrew). Ubuntu: Tests `linuxX64`, E2E (mob-Install-Skript, gitleaks-Release, Versionen gepinnt). E2E läuft zusätzlich einmal ohne gitleaks.
+  - macOS: Tests `macosArm64`, E2E mit mob und gitleaks (Homebrew). Ubuntu: Tests `linuxX64`, E2E (mob-Install-Skript, gitleaks-Release, Versionen gepinnt). E2E läuft zusätzlich einmal ohne gitleaks.
 - [ ] **8.2 Release-Workflow**
-  - Tag `v*` → drei `kmob-<version>-<target>.tar.gz` + SHA-256 als GitHub Release.
+  - Tag `v*` → zwei `kmob-<version>-<target>.tar.gz` + SHA-256 als GitHub Release.
 - [ ] **8.3 Manuelle Release-Checkliste** – design §8 „Manuell“
   - `/chat load` mit Leerzeichen im Pfad, Kette A→B→C mit drei Personen, Ctrl+C während `kmob next` und während `mob`.
 - [ ] **8.4 README finalisieren**

@@ -14,7 +14,7 @@ mob.sh selbst wird nicht verändert. Alle anderen Befehle (`status`, `timer`, `r
 
 ## Voraussetzungen
 
-- macOS (Apple Silicon oder Intel) oder Linux x64. Windows wird nicht unterstützt.
+- macOS (Apple Silicon) oder Linux x64. Intel-Macs und Windows werden nicht unterstützt.
 - [mob](https://mob.sh) im `PATH` (getestet mit 5.4.2)
 - [Kiro CLI](https://kiro.dev) (getestet mit 2.21.1)
 - git

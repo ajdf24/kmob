@@ -23,7 +23,7 @@ Teams, die mit mob.sh im Mob programmieren, verlieren beim Driver-Wechsel (`mob 
 ## Rahmenbedingungen
 
 - Kotlin/Native, Ausgabe als natives Binary ohne JVM-Abhängigkeit.
-- Zielplattformen: macOS arm64, macOS x64, Linux x64. **Kein Windows.**
+- Zielplattformen: macOS arm64, Linux x64. **Kein Windows, kein Intel-Mac** (Kotlin/Native-Target `macosX64` ist deprecated, im Team nicht genutzt).
 - Keine Änderung an mob.sh; Integration ausschließlich über Aufruf des `mob`-Binaries, von `git` und optional `gitleaks`.
 - Keine Netzwerkzugriffe durch kmob selbst (Transport ausschließlich über Git via mob).
 - Kompatibel getestet mit kiro-cli 2.21.1, mob 5.4.2 und gitleaks 8.30.1.
@@ -141,6 +141,7 @@ Hinweis: Automatisches Laden in eine laufende Kiro-Session ist nicht möglich, d
 | Frage | Entscheidung |
 |---|---|
 | Windows | nein |
+| Intel-Mac (`macosX64`) | nein (deprecated in Kotlin 2.4, nicht genutzt) |
 | Exportformat | per Spike verifiziert (S1, S2) |
 | Fortgeführte Session weitergeben | ja (S2) |
 | Größenlimit | nein; Warnung ab 50 MB (S7, S9) |

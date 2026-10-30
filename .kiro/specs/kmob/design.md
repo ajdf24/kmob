@@ -34,7 +34,7 @@ sequenceDiagram
 
 | Thema | Entscheidung | Begründung |
 |---|---|---|
-| Sprache/Build | Kotlin Multiplatform-Plugin, nur Native-Targets `macosArm64`, `macosX64`, `linuxX64`; Gradle mit Version Catalog | Anforderung; kein Windows |
+| Sprache/Build | Kotlin Multiplatform-Plugin, nur Native-Targets `macosArm64`, `linuxX64`; Gradle mit Version Catalog | Anforderung; kein Windows, kein Intel-Mac (`macosX64` deprecated) |
 | Argumente | **eigener kleiner Parser**, kein Clikt | kmob muss unbekannte Argumente unverändert und in Reihenfolge an mob weitergeben (R1.1, R1.7) |
 | Dateisystem | Okio (`FileSystem.SYSTEM`, in Tests `FakeFileSystem`) | Streaming großer Dateien (bis 133 MB, Spike S7), testbar |
 | JSON | kotlinx.serialization-json, nur `JsonElement`-API | Felder unbekannt/unverändert übernehmen (R7.1) |
@@ -70,7 +70,7 @@ kmob/
 │  │  ├─ state/LocalState.kt        Merker im git-common-dir
 │  │  ├─ platform/ (expect)         Process, Paths, Env, Terminal, Signals
 │  │  └─ Output.kt                  Meldungen (Präfix "kmob:"), Debug
-│  ├─ posixMain/kotlin/…            actual-Implementierungen (macOS + Linux)
+│  ├─ nativeMain/kotlin/…           posix-Implementierungen (macOS + Linux)
 │  └─ commonTest/kotlin/…           Unit-Tests mit Fakes
 ├─ e2e/run.sh                       End-to-End gegen Bare-Repo + echtes mob
 └─ .github/workflows/ci.yml, release.yml
@@ -583,9 +583,9 @@ flowchart TD
 - `./gradlew build` baut und testet für den Host; Release-Binaries über `linkReleaseExecutable<Target>`.
 - Version aus `gradle.properties` (`version=0.1.0`), per Gradle-Task als `BuildInfo.kt` generiert.
 - **CI** (`.github/workflows/ci.yml`, bei Push/PR):
-  - `macos-latest`: Tests `macosArm64`, Link `macosX64`, E2E (mob und gitleaks über Homebrew).
+  - `macos-latest`: Tests `macosArm64`, E2E (mob und gitleaks über Homebrew).
   - `ubuntu-latest`: Tests `linuxX64`, E2E (mob über offizielles Install-Skript, gitleaks-Release-Binary; Versionen gepinnt).
-- **Release** (`release.yml`, bei Tag `v*`): Binaries für alle drei Targets als `kmob-<version>-<target>.tar.gz` + SHA-256 an GitHub Release. Die macOS-Binaries sind in v0.1 nicht signiert/notarisiert; die Doku beschreibt `xattr -d com.apple.quarantine` (K4-06). Signierung ist ein späterer Ausbau.
+- **Release** (`release.yml`, bei Tag `v*`): Binaries für beide Targets als `kmob-<version>-<target>.tar.gz` + SHA-256 an GitHub Release. Die macOS-Binaries sind in v0.1 nicht signiert/notarisiert; die Doku beschreibt `xattr -d com.apple.quarantine` (K4-06). Signierung ist ein späterer Ausbau.
 
 ## 10. Nachverfolgung Requirements → Design
 
