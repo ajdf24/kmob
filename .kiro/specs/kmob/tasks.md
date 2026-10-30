@@ -28,18 +28,18 @@ Konventionen für alle Tasks:
 
 ## M0 – Projekt-Setup
 
-- [ ] **0.1 Gradle-Projekt anlegen**
-  - Gradle-Wrapper (aktuelle stabile Version, läuft mit dem lokalen JDK 25), Kotlin-Multiplatform-Plugin, Targets `macosArm64`, `linuxX64`, gemeinsames Source-Set `nativeMain` (design §3).
+- [x] **0.1 Gradle-Projekt anlegen**
+  - Gradle-Wrapper (aktuelle stabile Version, läuft mit dem lokalen JDK 25; lokal `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`, solange `xcode-select` auf die Command Line Tools zeigt), Kotlin-Multiplatform-Plugin, Targets `macosArm64`, `linuxX64`, gemeinsames Source-Set `nativeMain` (design §3).
   - `gradle/libs.versions.toml` mit gepinnten Versionen: Kotlin, kotlinx-serialization-json, Okio (inkl. `okio-fakefilesystem` für Tests).
   - Package `de.kmob`, `Main.kt` gibt `kmob <version>` aus.
   - Version aus `gradle.properties`, generierte `BuildInfo.kt` (design §9).
   - `.gitignore` für `build/`, `.gradle/`, `.kotlin/`, `local.properties`.
   - Fertig: `./gradlew build` grün, `build/bin/macosArm64/releaseExecutable/kmob.kexe` gibt die Version aus.
-- [ ] **0.2 Test-Gerüst**
+- [x] **0.2 Test-Gerüst**
   - kotlin.test in `commonTest`, ein Beispieltest.
   - `e2e/run.sh`: baut das Binary, legt ein Temp-Verzeichnis mit Bare-Repo und den Clones A und B an, `MOB_TIMER_LOCAL=false`, räumt per `trap` auf. Bricht mit Hinweis ab, wenn `mob` fehlt. Erster Fall: `kmob` gibt die Version aus.
   - Fertig: `./e2e/run.sh` grün.
-- [ ] **0.3 Minimal-CI**
+- [x] **0.3 Minimal-CI**
   - `.github/workflows/ci.yml`: `macos-latest`, `./gradlew build`. Linux und E2E kommen in M8.
 
 **Checkpoint M0:** Struktur und Versionen reviewen.
@@ -50,21 +50,21 @@ Konventionen für alle Tasks:
 
 Ziel: `alias mob=kmob` ändert für niemanden etwas.
 
-- [ ] **1.1 Platform (posix)**
+- [x] **1.1 Platform (posix)**
   - `env`, `realPath`, `isInteractive`, `readLine`, `findInPath`, `isExecutable`, `homeDir`, `now` (design §3).
   - Tests: `realPath` mit Symlink (`/tmp` → `/private/tmp` auf macOS), `findInPath` mit Temp-`PATH`.
-- [ ] **1.2 ProcessRunner (posix)** – design §5.9
+- [x] **1.2 ProcessRunner (posix)** – design §5.9
   - `runInherit` über `posix_spawnp`, SIGINT/SIGQUIT im Kind per `POSIX_SPAWN_SETSIGDEF` auf Default, kmob ignoriert beide nur, solange es wartet. Exit-Code, bei Signal `128 + n`.
   - `runCapture` mit zwei Pipes und `poll`, stdin aus `/dev/null`.
   - Tests: Exit-Codes (`sh -c 'exit 3'`), Ausgabe > 64 KB auf stdout und stderr gleichzeitig (Deadlock-Test), Signal-Exit-Code.
-- [ ] **1.3 Mob finden und durchreichen** – R1.1–R1.3, R1.5, R1.6
+- [x] **1.3 Mob finden und durchreichen** – R1.1–R1.3, R1.5, R1.6
   - `KMOB_MOB_BIN` (ungültig → eigene Meldung) oder `mob` im `PATH`. Fehlt mob → Meldung und Exit 1 (design §7).
   - Minimaler Parser: Kommando = erstes Argument außer `--debug`. `next`/`n`, `start`/`s` und `done`/`d` werden erkannt (in M1 noch ohne Vorlauf), alles geht unverändert an mob.
   - `Output.kt`: Präfix `kmob:`, stderr.
   - Tests: Aliase, Argumente identisch inkl. Reihenfolge, fehlendes mob.
-- [ ] **1.4 `version` und `help`** – R8.4 (ohne gitleaks), R8.5
+- [x] **1.4 `version` und `help`** – R8.4 (ohne gitleaks), R8.5
   - `version`: `kmob <v>`, danach `mob version`. `help` (auch ohne Kommando, `-h`, `--help`): kurzer kmob-Abschnitt, danach `mob help`.
-- [ ] **1.5 E2E Passthrough**
+- [x] **1.5 E2E Passthrough**
   - Fake-mob über `KMOB_MOB_BIN`, das seine Argumente protokolliert: `kmob status --yes -- x` → identische Argumente, gleicher Exit-Code.
   - Echtes mob: `kmob start`, `kmob next`, `kmob done` verhalten sich wie mob.
   - Signal: Fake-mob, das schläft, erhält SIGINT → kmob endet mit 130 (K5-02).
@@ -78,39 +78,40 @@ Ziel: `alias mob=kmob` ändert für niemanden etwas.
 
 Ziel: Ein Team kann die Übergabe ausprobieren. Bewusst schlank, aber **ohne Abstriche bei Sicherheit und Datenschutz**: Secret-Scan, Bestätigung vor dem ersten Push und keine Session-Dateien auf dem Basis-Branch sind von Anfang an dabei.
 
-- [ ] **2.1 Git** – design §5.2
+- [x] **2.1 Git** – design §5.2
   - `root`, `gitDir`, `commonDir`, `currentBranch`, `inIndex`, `inHead`, `removeFromIndex`, `userName`. Alles außer `root` mit `git -C <root>`.
   - Tests mit Fake-`ProcessRunner`.
-- [ ] **2.2 SessionStore** – R2.4, R2.5, R7.1, R7.2, design §5.3
+- [x] **2.2 SessionStore** – R2.4, R2.5, R7.1, R7.2, design §5.3
   - Verzeichnis aus `KMOB_KIRO_SESSIONS_DIR` (R6.2, nötig für E2E), sonst `~/.kiro/sessions/cli`.
   - `*.json` lesen, `SessionInfo`, `freshness`, `hasCompleteEntry`, `skipped`-Zähler. Pfadvergleich `isWithin` (segmentweise, realpath).
   - Tests: Subagent, fehlende/leere/nur unvollständige `.jsonl`, kaputtes JSON, Präfix-Falle `/repo` vs. `/repo-x`, Leerzeichen, Symlink, null-Zeiten.
-- [ ] **2.3 Auswahl (vereinfacht)** – R2.6.4, R2.7
+- [x] **2.3 Auswahl (vereinfacht)** – R2.6.4, R2.7
   - Nur Regel 4 (zuletzt aktiv). Keine Kandidaten → Warnung, nur Code übergeben.
   - Auswahl-Meldung mit voller ID, Titel und Stand (design §6.1).
-- [ ] **2.4 Snapshot** – R2.2, R2.3, R2.11, design §5.5
+- [x] **2.4 Snapshot** – R2.2, R2.3, R2.11, design §5.5
   - Kopie nach `<git-dir>/kmob/tmp/`: Metadaten validiert, nur vollständige Zeilen, jede Zeile gültiges JSON. `tmp/` zu Beginn leeren.
   - Tests: unvollständige letzte Zeile, Leerzeilen, ungültige Zeile, Zeilennummer = Eintrag, große Zeile (> 10 MB) mit konstantem Speicher.
-- [ ] **2.5 MandatoryRules + BuiltinScanner** – R5.2–R5.4, R5.7 (ohne Hinweis), design §5.6
+- [x] **2.5 MandatoryRules + BuiltinScanner** – R5.2–R5.4, R5.7 (ohne Hinweis), design §5.6
   - Eine Regeldefinition (fünf Regeln mit Vorfilter, Regex und Allowlist), Scan von `meta.json` und `log.jsonl`, Meldung ohne Wert, max. 10 Treffer.
   - Tests: Positivfall je Regel, Negativfälle (`aws_secret_access_key`, `AKIAIOSFODNN7EXAMPLE`, „use a Bearer token“, `Bearer xxxx…`, „github“), Treffer in den Metadaten.
   - Messung: Scan der größten lokalen Session dauert < 15 s. Sonst Vorfilter auf Byte-Ebene (design §11).
-- [ ] **2.6 ArtifactWriter + HandoverInfo** – R2.1, R2.12, R3.2, design §5.7, §5.8
+    Ergebnis: 138 MB, Release-Build: Snapshot 2,8 s + Scan 1,9 s (`PerfTest`, `KMOB_PERF_SESSION`).
+- [x] **2.6 ArtifactWriter + HandoverInfo** – R2.1, R2.12, R3.2, design §5.7, §5.8
   - Streamen nach `tmp/`, Rename-Reihenfolge, `artifact_bytes`. `EXDEV`-Fallback erst in M5. Bis dahin klare Fehlermeldung.
   - Tests: Byte-Gleichheit mit dem Format aus Spike S1, vorhandenes Artefakt bleibt bei Fehler unverändert.
-- [ ] **2.7 LocalState + Erst-Bestätigung** – R5.1, design §5.10
+- [x] **2.7 LocalState + Erst-Bestätigung** – R5.1, design §5.10
   - Merker `notice-accepted` im git-common-dir. Mit TTY Frage `[y/N]`, ohne TTY Abbruch mit Hinweis.
   - In M2 ist `--yes` die einzige kmob-Option, damit die KI und E2E-Tests `next` ausführen können (einfache Erkennung, der vollständige Parser kommt in M7).
-- [ ] **2.8 `kmob next`** – R2.1, R2.15, design §6.1 (Teilmenge)
+- [x] **2.8 `kmob next`** – R2.1, R2.15, design §6.1 (Teilmenge)
   - Ablauf: Git-Root → WIP-Branch? (Präfix `mob/` fest, `mob config` erst in M6) → Auswahl → Bestätigung → Snapshot → Scan → Writer → `mob next`.
   - Kein Repo oder kein WIP-Branch → nur durchreichen.
-- [ ] **2.9 `kmob start`** – R3.1–R3.4, design §6.2
+- [x] **2.9 `kmob start`** – R3.1–R3.4, design §6.2
   - Nach erfolgreichem `mob start`: Info-Zeile und `/chat load <absoluter Pfad>`.
-- [ ] **2.10 `kmob done` (einfach)** – R4.1, R4.2, R4.4
+- [x] **2.10 `kmob done` (einfach)** – R4.1, R4.2, R4.4
   - `.kmob/` löschen → `mob done` → `.kmob` im Index? → entfernen, melden, Exit 1. Wiederherstellung und Done-Modus kommen in M6.
-- [ ] **2.11 E2E Happy Path** – design §8 E2E 1, 2, 4, 5
+- [x] **2.11 E2E Happy Path** – design §8 E2E 1, 2, 4, 5
   - A: `kmob next` aus Unterverzeichnis → Artefakt im WIP-Branch, Inhalt wie erwartet. B: `kmob start` zeigt den Pfad. B: `kmob done` → nichts aus `.kmob/` im Index. `kmob next` auf dem Basis-Branch → kein `.kmob/`. Secret-Fixture → Exit 1.
-- [ ] **2.12 README-Status + Pre-Release**
+- [~] **2.12 README-Status + Pre-Release** (README erledigt; Tag `v0.1.0-alpha.1` erst nach Freigabe)
   - README: Abschnitt „Stand v0.1.0-alpha“ mit den Grenzen. Tag `v0.1.0-alpha.1`, lokal gebautes Binary für den Teamtest.
 - [ ] **2.13 Manueller Test mit echtem Kiro (mit dem Pre-Release-Binary)**
   - Installation genau nach README aus 2.12, dann zwei Clones auf einem Rechner: `kmob next` → `kmob start` → `/chat load` → Kontextfrage beantworten lassen (wie Spike S2).

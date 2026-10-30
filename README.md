@@ -12,6 +12,19 @@ mob.sh selbst wird nicht verändert. Alle anderen Befehle (`status`, `timer`, `r
 
 > Status: in Entwicklung. Diese Doku beschreibt das Zielverhalten von v0.1 laut [Spec](.kiro/specs/kmob/).
 
+### Stand v0.1.0-alpha (MVP)
+
+Die Alpha kann bereits übergeben, übernehmen und aufräumen (`kmob next`/`start`/`done`), mit eingebautem Secret-Scan und Bestätigung vor dem ersten Push. Was in dieser Doku beschrieben ist, aber noch fehlt:
+
+- Session-Auswahl: nur „zuletzt aktive Session“. `--session`, `--pick-session`, `--no-session` und `KIRO_SESSION_ID` kommen später.
+- Secret-Scan: nur die eingebauten Grundmuster. gitleaks, `--allow-secrets` und `--require-gitleaks` sind noch nicht eingebaut.
+- Findet kmob keine Session, bleibt eine alte `.kmob/` aus einer früheren Runde vorerst liegen und wird weitergegeben.
+- Es gibt keine Prüfung auf ignoriertes `.kmob/`, keine Größenwarnung und keinen Hinweis bei abgelehntem Push.
+- `kmob done`: Der Done-Modus (`--no-squash`, `--squash-wip`) wird nicht geprüft, und nach einem fehlgeschlagenen `mob done` wird nichts wiederhergestellt.
+- Als Optionen gibt es nur `--yes` und `--debug` (bzw. `KMOB_YES`/`KMOB_DEBUG`). Unterstützt wird nur macOS (Apple Silicon); das Linux-Binary ist noch ungetestet.
+
+Für den Teamtest: Binary mit `./gradlew linkReleaseExecutableMacosArm64` bauen (Ergebnis `build/bin/macosArm64/releaseExecutable/kmob.kexe`) und als `kmob` in den `PATH` legen.
+
 ## Voraussetzungen
 
 - macOS (Apple Silicon) oder Linux x64. Intel-Macs und Windows werden nicht unterstützt.
