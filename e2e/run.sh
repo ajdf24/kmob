@@ -22,10 +22,11 @@ command -v mob >/dev/null || { echo "mob not found in PATH – install from http
 # ---------------------------------------------------------------- Umgebung
 WORK="$(cd "$(mktemp -d)" && pwd -P)"   # aufgelöst (/tmp → /private/tmp)
 trap 'rm -rf "$WORK"' EXIT
+trap 'echo "  ✗ aborted in \"$CURRENT\" (${BASH_SOURCE[0]##*/}:$LINENO: $BASH_COMMAND)" >&2' ERR
 mkdir -p "$WORK/bin"
 ln -s "$KMOB_BIN" "$WORK/bin/kmob"
 export PATH="$WORK/bin:$PATH"
-export MOB_TIMER_LOCAL=false MOB_TIMER_ROOM="" MOB_REQUIRE_COMMIT_MESSAGE=false
+export MOB_TIMER_LOCAL=false MOB_TIMER_ROOM="" MOB_REQUIRE_COMMIT_MESSAGE=false MOB_SKIP_CI_PUSH_OPTION_ENABLED=false
 export HOME="$WORK/home"; mkdir -p "$HOME"   # kein ~/.mob, kein echtes ~/.kiro
 export GIT_CONFIG_NOSYSTEM=1
 git config --global init.defaultBranch main
@@ -42,6 +43,7 @@ check() { # check "<beschreibung>" <befehl…>
   if "$@"; then ok "$d"; else fail "$d"; fi
 }
 contains() { [[ "$1" == *"$2"* ]]; }
+quiet() { "$@" >/dev/null 2>&1; }
 
 # Frisches Bare-Repo mit den Clones A und B, Basis-Branch main mit einem Commit.
 setup_repos() {

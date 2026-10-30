@@ -33,6 +33,9 @@ val generateBuildInfo by tasks.registering {
 kotlin {
     val nativeTargets: List<KotlinNativeTarget> = listOf(macosArm64(), linuxX64())
     nativeTargets.forEach { target ->
+        target.compilations.getByName("main").cinterops.create("kmobnative") {
+            definitionFile.set(project.file("src/nativeInterop/cinterop/kmobnative.def"))
+        }
         target.binaries.executable {
             baseName = "kmob"
             entryPoint = "de.kmob.main"

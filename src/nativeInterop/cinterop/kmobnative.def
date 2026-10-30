@@ -1,0 +1,129 @@
+package = de.kmob.native
+---
+/*
+ * Kleiner C-Shim für Prozessstart (design §5.9). posix_spawn-Typen unterscheiden sich
+ * zwischen macOS und Linux und sind in Kotlin/Native nicht commonisiert – hier einheitlich.
+ */
+#include <errno.h>
+#include <poll.h>
+#include <signal.h>
+#include <spawn.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+extern char **environ;
+
+/* Wartet auf pid; liefert Exit-Code bzw. 128 + Signal, -1 bei Fehler. */
+static int kmob_wait(pid_t pid) {
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) return -1;
+    }
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+    return -1;
+}
+
+static int kmob_attr_init(posix_spawnattr_t *attr) {
+    sigset_t def;
+    sigemptyset(&def);
+    sigaddset(&def, SIGINT);
+    sigaddset(&def, SIGQUIT);
+    sigaddset(&def, SIGPIPE);
+    if (posix_spawnattr_init(attr) != 0) return -1;
+    posix_spawnattr_setsigdefault(attr, &def);
+    posix_spawnattr_setflags(attr, POSIX_SPAWN_SETSIGDEF);
+    return 0;
+}
+
+/*
+ * Startet argv mit geerbten Deskriptoren. kmob ignoriert SIGINT/SIGQUIT nur, solange es wartet;
+ * das Kind startet mit Default-Behandlung. Rückgabe: Exit-Code, 128 + Signal oder -errno (Start fehlgeschlagen).
+ */
+static int kmob_run_inherit(char *const argv[]) {
+    posix_spawnattr_t attr;
+    if (kmob_attr_init(&attr) != 0) return -ENOMEM;
+    struct sigaction ign, old_int, old_quit;
+    memset(&ign, 0, sizeof(ign));
+    ign.sa_handler = SIG_IGN;
+    sigaction(SIGINT, &ign, &old_int);
+    sigaction(SIGQUIT, &ign, &old_quit);
+    pid_t pid;
+    int rc = posix_spawnp(&pid, argv[0], NULL, &attr, argv, environ);
+    posix_spawnattr_destroy(&attr);
+    int result = rc != 0 ? -rc : kmob_wait(pid);
+    sigaction(SIGINT, &old_int, NULL);
+    sigaction(SIGQUIT, &old_quit, NULL);
+    return result;
+}
+
+static int kmob_append(char **buf, size_t *len, size_t *cap, const char *data, size_t n) {
+    if (*len + n + 1 > *cap) {
+        size_t nc = *cap ? *cap : 4096;
+        while (*len + n + 1 > nc) nc *= 2;
+        char *nb = realloc(*buf, nc);
+        if (!nb) return -1;
+        *buf = nb;
+        *cap = nc;
+    }
+    memcpy(*buf + *len, data, n);
+    *len += n;
+    (*buf)[*len] = 0;
+    return 0;
+}
+
+/*
+ * Startet argv mit stdin=/dev/null und sammelt stdout/stderr (beide per poll, kein Deadlock).
+ * *out/*err werden mit malloc angelegt (nullterminiert) und müssen mit free freigegeben werden.
+ * Rückgabe: Exit-Code, 128 + Signal oder -errno.
+ */
+static int kmob_run_capture(char *const argv[], char **out, size_t *out_len, char **err, size_t *err_len) {
+    *out = NULL; *err = NULL; *out_len = 0; *err_len = 0;
+    size_t out_cap = 0, err_cap = 0;
+    int po[2], pe[2];
+    if (pipe(po) != 0) return -errno;
+    if (pipe(pe) != 0) { int e = errno; close(po[0]); close(po[1]); return -e; }
+    fcntl(po[0], F_SETFD, FD_CLOEXEC);
+    fcntl(pe[0], F_SETFD, FD_CLOEXEC);
+
+    posix_spawn_file_actions_t fa;
+    posix_spawn_file_actions_init(&fa);
+    posix_spawn_file_actions_addopen(&fa, 0, "/dev/null", O_RDONLY, 0);
+    posix_spawn_file_actions_adddup2(&fa, po[1], 1);
+    posix_spawn_file_actions_adddup2(&fa, pe[1], 2);
+    posix_spawn_file_actions_addclose(&fa, po[1]);
+    posix_spawn_file_actions_addclose(&fa, pe[1]);
+    posix_spawnattr_t attr;
+    kmob_attr_init(&attr);
+    pid_t pid;
+    int rc = posix_spawnp(&pid, argv[0], &fa, &attr, argv, environ);
+    posix_spawn_file_actions_destroy(&fa);
+    posix_spawnattr_destroy(&attr);
+    close(po[1]);
+    close(pe[1]);
+    if (rc != 0) { close(po[0]); close(pe[0]); return -rc; }
+
+    struct pollfd fds[2] = { { po[0], POLLIN, 0 }, { pe[0], POLLIN, 0 } };
+    int open_fds = 2;
+    char chunk[65536];
+    while (open_fds > 0) {
+        if (poll(fds, 2, -1) < 0) { if (errno == EINTR) continue; break; }
+        for (int i = 0; i < 2; i++) {
+            if (fds[i].fd < 0 || !(fds[i].revents & (POLLIN | POLLHUP | POLLERR))) continue;
+            ssize_t n = read(fds[i].fd, chunk, sizeof(chunk));
+            if (n > 0) {
+                if (i == 0) kmob_append(out, out_len, &out_cap, chunk, (size_t)n);
+                else kmob_append(err, err_len, &err_cap, chunk, (size_t)n);
+            } else if (n == 0 || errno != EINTR) {
+                close(fds[i].fd);
+                fds[i].fd = -1;
+                open_fds--;
+            }
+        }
+    }
+    return kmob_wait(pid);
+}
