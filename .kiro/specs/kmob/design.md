@@ -153,9 +153,11 @@ Regeln für erweiterte Befehle:
    | `--allow-secrets` | – | `KMOB_ALLOW_SECRETS` | next |
    | `--require-gitleaks` | – | `KMOB_REQUIRE_GITLEAKS` | next |
    | `--yes` | – | `KMOB_YES` | next (Erst-Bestätigung), done |
+   | `--kiro` / `--no-kiro` | – | `KMOB_START_KIRO` (`true`/`false`, nicht gesetzt = fragen) | start |
    | `--debug` | – | `KMOB_DEBUG` | alle erweiterten; **bleibt** in den mob-Argumenten (R7.3). `KMOB_DEBUG` wird nicht an mob gegeben |
    | – | – | `KMOB_KIRO_SESSIONS_DIR` | next |
    | – | – | `KMOB_GITLEAKS_BIN` | next, version |
+   | – | – | `KMOB_KIRO_BIN` | start |
    | – | – | `KMOB_MOB_BIN` | alle |
 
 4. Eine kmob-Option bei einem erweiterten Befehl, für den sie nicht gilt (z. B. `kmob start --yes`) → Usage-Fehler, Exit 2.
@@ -466,17 +468,37 @@ flowchart TD
     B -->|ja| C{"Git-Root und<br/>#lt;root#gt;/.kmob/kiro-session.json?"}
     C -->|nein| X0([Exit 0])
     C -->|ja| D{"handover.json gültig<br/>und artifact_bytes passt?"}
-    D -->|ja| E[Info-Zeile + Lade-Befehl]
-    D -->|nein| F[nur Lade-Befehl]
-    E --> X0
-    F --> X0
+    D -->|ja| E[Info-Zeile]
+    D -->|nein| K
+    E --> K{"KIRO_SESSION_ID gesetzt?<br/>(innerhalb von Kiro)"}
+    K -->|ja, R3.6| IN["Lade-Befehl +<br/>'type it in the chat'"] --> X0
+    K -->|nein| N{"--no-kiro /<br/>KMOB_START_KIRO=false?"}
+    N -->|ja| LC[nur Lade-Befehl] --> X0
+    N -->|nein| T{TTY?}
+    T -->|nein| LC
+    T -->|ja| Y{"--kiro / KMOB_START_KIRO=true?"}
+    Y -->|ja| KB
+    Y -->|nein| Q{"Start Kiro with this session? [Y/n]"}
+    Q -->|n| LC
+    Q -->|Y / Enter| KB{"kiro-cli gefunden?<br/>(KMOB_KIRO_BIN / PATH)"}
+    KB -->|nein| W[Warnung + Lade-Befehl] --> X0
+    KB -->|ja| RUN[["kiro-cli chat '/chat load #lt;pfad#gt;'<br/>(inherit, warten)"]] --> XS([Exit-Code von mob start])
 ```
+
+Kiro direkt starten (R3.5, Spike S10): kmob ruft `kiro-cli chat "/chat load <root>/.kmob/kiro-session.json"` per `runInherit` auf, im aktuellen Verzeichnis. Der Slash-Befehl ist ein einzelnes Argument, Leerzeichen im Pfad werden also nicht von einer Shell zerlegt. Der Exit-Code von Kiro beeinflusst den von kmob nicht. Die Frage erscheint nach der Ausgabe von mob, damit sie nicht in dessen Meldungen untergeht.
 
 Ausgabe (R3.1, absoluter Pfad K1-02):
 
 ```
 kmob: Kiro session from Anna, handed over 2026-10-29T13:20:00Z: "Refactoring Payment-Service" (78 entries, last activity 2026-10-29T13:18:01Z)
 kmob: load it in Kiro with:  /chat load /Users/bob/work/shop/.kmob/kiro-session.json
+```
+
+Innerhalb von Kiro (R3.6):
+
+```
+kmob: load it in Kiro with:  /chat load /Users/bob/work/shop/.kmob/kiro-session.json
+kmob: (kmob runs inside a Kiro session and cannot load it for you – type the command in the chat)
 ```
 
 Dateien werden nicht verändert (R3.4).
@@ -528,6 +550,8 @@ flowchart TD
 | gitleaks fehlt + `--require-gitleaks` | `kmob: gitleaks not found (required by --require-gitleaks). Install: https://github.com/gitleaks/gitleaks` | 1 |
 | gitleaks fehlt (einmal je Clone) | `kmob: gitleaks not found – using built-in secret patterns only. Install gitleaks for better detection.` | – |
 | Usage | `kmob: <grund>. See kmob help.` | 2 |
+| `kiro-cli` fehlt bei `start` | `kmob: warning: kiro-cli not found – start Kiro yourself and load the session.` (danach Lade-Befehl) | mob |
+| `--kiro` innerhalb von Kiro / ohne TTY | `kmob: --kiro ignored: <already inside a Kiro session \| no terminal>.` | mob |
 | Option beim falschen Befehl | `kmob: --<option> is only valid for <befehl>.` | 2 |
 | `.kmob/` ignoriert | `kmob: .kmob/<datei> is ignored by git (<quelle aus check-ignore -v>). mob would not transfer the session. Remove the ignore rule or use --no-session.` | 1 |
 | `--session` ungültig | `kmob: session <id> not found` / `matches several sessions: <ids>` / `belongs to <cwd>, not <root>` / `is a subagent session` / `has no log entries` | 1 |
@@ -560,6 +584,7 @@ flowchart TD
 - BuiltinScanner: Positivfall je Regel; Negativ: `aws_secret_access_key`, `AKIAIOSFODNN7EXAMPLE`, „use a Bearer token“, `Bearer xxxx…`, „github“/„high“ ohne Token.
 - Mob: `mob config`-Parsing mit Anführungszeichen, `doneMode` inkl. `UNKNOWN`.
 - HandoverInfo: tolerant lesen, `artifact_bytes`-Abgleich.
+- Start mit Kiro: alle Zweige aus 6.2 (innerhalb Kiro, `--no-kiro`, Env true/false, kein TTY, Frage Y/Enter/n/EOF, kiro-cli fehlt), Argument genau `["chat", "/chat load <abs>"]`, Exit-Code = mob start.
 
 **E2E (`e2e/run.sh`, echtes mob + gebautes Binary):** Bare-Repo + Clones A/B, Fake-Session-Verzeichnis über `KMOB_KIRO_SESSIONS_DIR`, `MOB_TIMER_LOCAL=false`, `KMOB_YES=true` außer in den Bestätigungstests. Läuft einmal mit gitleaks im `PATH` und einmal ohne.
 1. A: `kmob start`, Fixture mit `cwd` = Clone A, `kmob next` **aus einem Unterverzeichnis** → `<root>/.kmob/` im WIP-Branch, Inhalt = erwarteter Export (K1-01).
@@ -598,7 +623,7 @@ flowchart TD
 | R2.4, R2.5 | 5.3 |
 | R2.6–R2.8 | 5.4, 6.1 |
 | R2.9, R2.10, R2.13, R2.15 | 6.1, 7 |
-| R3.1–R3.4 | 5.8, 6.2 |
+| R3.1–R3.6 | 5.8, 6.2 |
 | R4.1–R4.5 | 5.1 (doneMode), 6.3 |
 | R5.1 | 5.10 |
 | R5.2–R5.4, R5.6–R5.8 | 5.6 |

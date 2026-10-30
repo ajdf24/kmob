@@ -11,6 +11,7 @@ Inkrementell in Meilensteinen. Jeder Meilenstein endet mit einem **lauffähigen,
 | M0 | Projekt baut, Binary läuft | – |
 | M1 | kmob reicht alles an mob durch | Drop-in für `mob` |
 | M2 | **MVP**: Session-Übergabe im Happy Path, eingebauter Secret-Scan | erster Teamtest |
+| M2b | `kmob start` startet Kiro direkt mit der Session | bequemer Teamtest |
 | M3 | gitleaks-Scan | sicherer Teamtest |
 | M4 | vollständige Session-Auswahl und Optionen | Alltagseinsatz |
 | M5 | robustes `next` (Fehlerfälle, Größe, Ignore) | Alltagseinsatz |
@@ -120,6 +121,26 @@ Ziel: Ein Team kann die Übergabe ausprobieren. Bewusst schlank, aber **ohne Abs
 
 **Grenzen (dokumentiert):** nur „zuletzt aktive Session“, nur eingebaute Muster, keine Prüfung auf `.gitignore`, alte `.kmob/` wird bei fehlender Session **nicht** entfernt (kommt in 4.4), kein Hinweis bei abgelehntem Push, `done` ohne Wiederherstellung und ohne Done-Modus-Prüfung.
 **Checkpoint M2 (wichtigster):** Teamtest über ca. 1–2 Wochen. Auswerten: Wird die geladene Session genutzt? Wie groß werden die Sessions? Wo hakt es? Danach die Reihenfolge von M3–M7 neu priorisieren.
+
+---
+
+## M2b – Kiro direkt mit der Session starten
+
+Aus dem ersten Test mit echtem Kiro: der Umweg „kmob start, dann /chat load abtippen“ ist zu umständlich. Spike S10 zeigt, dass `kiro-cli chat "/chat load <pfad>"` funktioniert.
+
+- [ ] **2b.1 Kiro finden** – R6.5
+  - `KMOB_KIRO_BIN` (ungültig → Warnung) oder `kiro-cli` im `PATH`.
+- [ ] **2b.2 Optionen `--kiro` / `--no-kiro`, `KMOB_START_KIRO`** – R3.5, design §4.1
+  - In der einfachen Erkennung aus M2 (nur bei `start`), Widerspruch → Usage-Fehler.
+- [ ] **2b.3 Ablauf in `kmob start`** – R3.5, R3.6, design §6.2
+  - Zweige laut Diagramm, Frage `[Y/n]` nach der mob-Ausgabe, `runInherit`, Exit-Code von mob start.
+  - Unit-Tests: alle Zweige (design §8 „Start mit Kiro“).
+- [ ] **2b.4 E2E**
+  - Fake-`kiro-cli` über `KMOB_KIRO_BIN`, protokolliert Argumente: `kmob start --kiro` ohne TTY → nicht gestartet; mit `KIRO_SESSION_ID` → Hinweis; Start mit TTY wird über `script(1)` simuliert und prüft das Argument `/chat load <abs>`.
+- [ ] **2b.5 README + Hilfe**
+  - Abschnitt „3. Übernehmen“ und Optionstabelle, `kmob help`.
+
+**Checkpoint M2b:** im Teamtest ausprobieren.
 
 ---
 

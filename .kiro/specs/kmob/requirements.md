@@ -77,7 +77,15 @@ Teams, die mit mob.sh im Mob programmieren, verlieren beim Driver-Wechsel (`mob 
 3. WENN kein Artefakt existiert oder `mob start` fehlschlug, DANN SOLL kmob nichts zusätzlich ausgeben.
 4. kmob SOLL das Artefakt beim Start nicht verändern oder löschen.
 
-Hinweis: Automatisches Laden in eine laufende Kiro-Session ist nicht möglich, da `/chat load` ein In-Chat-Befehl ist. Nach dem Laden entsteht lokal eine neue Session mit voller Historie; diese wird beim nächsten `kmob next` weitergegeben (Spike S2, Kette A→B→C).
+5. WENN `kmob start` außerhalb einer Kiro-Session läuft (`KIRO_SESSION_ID` nicht gesetzt), `mob start` erfolgreich war und ein Artefakt existiert, DANN SOLL kmob anbieten, Kiro direkt mit der übergebenen Session zu starten: `kiro-cli chat "/chat load <absoluter pfad>"` (Spike S10).
+   - Mit Terminal fragt kmob `Start Kiro with this session? [Y/n]` (Enter = ja).
+   - Option `--kiro` bzw. `KMOB_START_KIRO=true` startet ohne Frage; `--no-kiro` bzw. `KMOB_START_KIRO=false` verhindert den Start. `--kiro` und `--no-kiro` zusammen sind ein Usage-Fehler.
+   - Ohne Terminal startet kmob Kiro nicht (auch nicht mit `--kiro`) und gibt nur den Lade-Befehl aus.
+   - kmob wartet, bis Kiro beendet ist, und endet mit dem Exit-Code von `mob start`.
+   - WENN `kiro-cli` nicht gefunden wird, DANN SOLL kmob warnen und nur den Lade-Befehl ausgeben (kein Fehler).
+6. WENN `kmob start` innerhalb einer Kiro-Session läuft, DANN SOLL kmob Kiro nicht starten, sondern den Lade-Befehl ausgeben und darauf hinweisen, dass er im Chat eingegeben werden muss. Ein `--kiro` wird dann mit Hinweis ignoriert.
+
+Hinweis: In eine **laufende** Kiro-Session kann kmob nicht laden, da `/chat load` ein In-Chat-Befehl ist und Kiro keine Schnittstelle dafür bietet (Spike S10). Nach dem Laden entsteht lokal eine neue Session mit voller Historie; diese wird beim nächsten `kmob next` weitergegeben (Spike S2, Kette A→B→C).
 
 ### R4 – Aufräumen bei `kmob done`
 
@@ -108,6 +116,7 @@ Hinweis: Automatisches Laden in eine laufende Kiro-Session ist nicht möglich, d
 2. Der Pfad zum Kiro-Session-Verzeichnis SOLL konfigurierbar sein (`KMOB_KIRO_SESSIONS_DIR`, Default `~/.kiro/sessions/cli/`).
 3. Der Pfad zum `mob`-Binary SOLL konfigurierbar sein (`KMOB_MOB_BIN`, Default: Suche im `PATH`).
 4. Der Pfad zum `gitleaks`-Binary SOLL konfigurierbar sein (`KMOB_GITLEAKS_BIN`, Default: Suche im `PATH`).
+5. Der Pfad zum `kiro-cli`-Binary SOLL konfigurierbar sein (`KMOB_KIRO_BIN`, Default: Suche im `PATH`).
 
 ### R7 – Robustheit gegenüber dem Kiro-Format
 
@@ -128,7 +137,7 @@ Hinweis: Automatisches Laden in eine laufende Kiro-Session ist nicht möglich, d
 - Windows.
 - Andere KI-Tools als Kiro CLI (Architektur soll Erweiterung aber nicht verbauen).
 - Das zweite Kiro-Session-Format unter `~/.kiro/sessions/<hash>/sess_*/` (Spike S9).
-- Automatisches Laden der Session in Kiro.
+- Automatisches Laden der Session in eine bereits laufende Kiro-Session.
 - Zusammenführen paralleler Sessions mehrerer Personen.
 - Übergabe-Notiz (`handoff.md`) – möglicher späterer Ausbau.
 - Größenlimits, Kompression oder Kürzen von Sessions.
@@ -151,3 +160,4 @@ Hinweis: Automatisches Laden in eine laufende Kiro-Session ist nicht möglich, d
 | Erst-Hinweis (Audit K1-08) | Bestätigung vor dem ersten Push, je Clone |
 | kmob-Optionen bei Passthrough-Befehlen (Audit K1-10) | nicht auswerten |
 | Secret-Scanner | gitleaks, falls vorhanden; sonst eingebauter Minimal-Scanner (S8) |
+| Kiro direkt starten bei `kmob start` | ja, außerhalb von Kiro mit Rückfrage `[Y/n]`; `--kiro`/`--no-kiro`, `KMOB_START_KIRO` (S10) |

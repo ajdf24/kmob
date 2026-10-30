@@ -114,3 +114,17 @@ Aufruf: `gitleaks dir <datei> --redact --no-banner -l error -f json -r - --exit-
 **Offen:** `KIRO_SESSION_ID` nach `/chat load` bzw. `/chat new` (zeigt die Variable im Shell-Tool dann auf die neue Session?). Automatisierter Test scheiterte am Bestätigungsdialog von `--trust-all-tools`; wird manuell nachgeholt. Risiko, falls die Variable auf die alte ID zeigt: Regel 3 würde die kurze Ausgangssession statt der geladenen wählen. Absicherung im Design unabhängig vom Ergebnis: Sessions ohne Log-Einträge sind keine Kandidaten, und weicht die Session aus `KIRO_SESSION_ID` von der zuletzt aktiven ab, warnt kmob und nennt beide.
 
 **Neu entdeckt:** Neben `~/.kiro/sessions/cli/` existiert ein zweites Session-Format (`~/.kiro/sessions/<hash>/sess_<uuid>/session.json`, Felder `workspacePaths`, `lastModifiedAt`), vermutlich von einer anderen Kiro-Oberfläche. kmob v0.1 unterstützt nur das CLI-Format (`cli/`); in der Doku vermerkt.
+
+## S10 – Kiro direkt mit der Session starten
+
+Getestet manuell (kiro-cli 2.21.1), 2026-10-30.
+
+| Test | Ergebnis |
+|---|---|
+| `kiro-cli chat "/chat load <absoluter pfad>/.kmob/kiro-session.json"` | ✅ Kiro führt den Slash-Befehl als erste Eingabe aus, die Session ist geladen, Folgefragen nutzen den Kontext |
+| `kiro-cli --help-all` nach `load`/`import` | keine eigene Lade-Option; nur `--resume`, `--resume-id`, `--resume-picker` (lokale Sessions) und Cloud-Optionen |
+| Laden in eine **laufende** Session von außen (Kindprozess des Shell-Tools) | nicht möglich, Kiro bietet keine Schnittstelle dafür |
+
+**Folgerung:** `kmob start` kann außerhalb von Kiro `kiro-cli chat "/chat load <pfad>"` starten. kmob nutzt damit den offiziellen Ladeweg und schreibt nichts in Kiros Session-Verzeichnis. Innerhalb von Kiro bleibt es beim Lade-Hinweis.
+
+**Offen (manueller Test vor Release):** Pfad mit Leerzeichen als Teil des Slash-Befehls.
