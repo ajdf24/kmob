@@ -36,6 +36,8 @@ kotlin {
         target.compilations.getByName("main").cinterops.create("kmobnative") {
             definitionFile.set(project.file("src/nativeInterop/cinterop/kmobnative.def"))
         }
+        // Release-Testbinary für Messungen (PerfTest)
+        target.binaries.test(listOf(org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType.RELEASE))
         target.binaries.executable {
             baseName = "kmob"
             entryPoint = "de.kmob.main"

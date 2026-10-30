@@ -2,6 +2,8 @@ package de.kmob
 
 import de.kmob.cli.Args
 import de.kmob.cli.Command
+import de.kmob.cli.Commands
+import de.kmob.git.Git
 import de.kmob.cli.Invocation
 import de.kmob.mob.Mob
 import de.kmob.platform.Platform
@@ -16,6 +18,7 @@ class App(
 ) {
     private val out = Output(platform)
     private val mob = Mob(platform, runner)
+    private val commands = Commands(platform, fs, Git(platform, runner), mob, out)
 
     fun run(args: List<String>): Int = try {
         val inv = Args.parse(args, platform::env)
@@ -28,7 +31,10 @@ class App(
     }
 
     private fun dispatch(inv: Invocation): Int = when (inv.command) {
-        Command.PASSTHROUGH, Command.NEXT, Command.START, Command.DONE -> mob.run(inv.mobArgs)
+        Command.PASSTHROUGH -> mob.run(inv.mobArgs)
+        Command.NEXT -> commands.next(inv)
+        Command.START -> commands.start(inv)
+        Command.DONE -> commands.done(inv)
         Command.VERSION -> version()
         Command.HELP -> help()
     }

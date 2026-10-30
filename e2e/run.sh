@@ -22,7 +22,7 @@ command -v mob >/dev/null || { echo "mob not found in PATH – install from http
 # ---------------------------------------------------------------- Umgebung
 WORK="$(cd "$(mktemp -d)" && pwd -P)"   # aufgelöst (/tmp → /private/tmp)
 trap 'rm -rf "$WORK"' EXIT
-trap 'echo "  ✗ aborted in \"$CURRENT\" (${BASH_SOURCE[0]##*/}:$LINENO: $BASH_COMMAND)" >&2' ERR
+trap '[[ $- == *e* ]] && echo "  ✗ aborted in \"$CURRENT\" (${BASH_SOURCE[0]##*/}:$LINENO: $BASH_COMMAND)" >&2' ERR
 mkdir -p "$WORK/bin"
 ln -s "$KMOB_BIN" "$WORK/bin/kmob"
 export PATH="$WORK/bin:$PATH"

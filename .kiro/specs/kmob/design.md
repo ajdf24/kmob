@@ -341,7 +341,7 @@ flowchart TD
 | Regel (`kmob-…`) | Vorfilter | Regex | Allowlist |
 |---|---|---|---|
 | aws-access-key-id | `AKIA`, `ASIA` | `\b(AKIA\|ASIA)[0-9A-Z]{16}\b` | Wert endet auf `EXAMPLE` |
-| private-key | `PRIVATE KEY-----` | `-----BEGIN [A-Z ]*PRIVATE KEY-----` | – |
+| private-key | `PRIVATE KEY-----` | vollständiger Block `-----BEGIN … PRIVATE KEY-----` + ≥ 64 Zeichen Base64 + `-----END … PRIVATE KEY-----` (wie gitleaks; reine Erwähnung des Headers ist kein Treffer) | – |
 | bearer-token | `earer` (case-insensitive) | `(?i)\bbearer\s+([A-Za-z0-9._~+/=-]{20,})` | Shannon-Entropie < 3.0 |
 | github-token | `ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_` | `gh[pousr]_[A-Za-z0-9]{36}\|github_pat_[A-Za-z0-9_]{22,}` | – |
 | slack-token | `xox` | `xox[abprs]-[A-Za-z0-9-]{10,}` | – |
@@ -399,7 +399,7 @@ kmob:   Secret scan: <gitleaks 8.30.1 | built-in patterns only>. It is a safety 
 kmob: Continue and don't ask again for this clone? [y/N]
 ```
 
-`--yes` → bestätigt ohne Frage. Kein TTY und kein `--yes` → Abbruch mit Hinweis auf `--yes`, Exit 1. „Nein“ → Exit 1, kein Merker.
+`--yes` → Hinweistext wird einmal angezeigt, bestätigt ohne Frage. Kein TTY und kein `--yes` → Abbruch mit Hinweis auf `--yes`, Exit 1. „Nein“ → Exit 1, kein Merker.
 
 ## 6. Abläufe
 
