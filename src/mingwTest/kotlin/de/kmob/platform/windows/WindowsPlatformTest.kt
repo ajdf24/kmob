@@ -98,8 +98,10 @@ class WindowsPlatformTest {
 
     @Test
     fun captureStdinIsEmpty() {
-        val r = runner.runCapture(listOf("cmd.exe", "/c", "more & echo done"))
-        assertEquals("done\r\n", r.stdout)
+        // Liest stdin vollständig und gibt die Länge aus: NUL liefert sofort EOF, nichts wird geerbt.
+        val r = runner.runCapture(listOf("powershell.exe", "-NoProfile", "-Command", "[Console]::In.ReadToEnd().Length"))
+        assertEquals(0, r.exitCode, r.stderr)
+        assertEquals("0", r.stdout.trim(), "stdout=<${r.stdout}> stderr=<${r.stderr}>")
     }
 
     @Test
