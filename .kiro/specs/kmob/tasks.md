@@ -115,12 +115,12 @@ Ziel: Ein Team kann die Übergabe ausprobieren. Bewusst schlank, aber **ohne Abs
   - `.kmob/` löschen → `mob done` → `.kmob` im Index? → entfernen, melden, Exit 1. Wiederherstellung und Done-Modus kommen in M6.
 - [x] **2.11 E2E Happy Path** – design §8 E2E 1, 2, 4, 5
   - A: `kmob next` aus Unterverzeichnis → Artefakt im WIP-Branch, Inhalt wie erwartet. B: `kmob start` zeigt den Pfad. B: `kmob done` → nichts aus `.kmob/` im Index. `kmob next` auf dem Basis-Branch → kein `.kmob/`. Secret-Fixture → Exit 1.
-- [~] **2.12 README-Status + Pre-Release** (README erledigt; Tag `v0.1.0-alpha.1` erst nach Freigabe)
-  - README: Abschnitt „Stand v0.1.0-alpha“ mit den Grenzen. Tag `v0.1.0-alpha.1`, lokal gebautes Binary für den Teamtest.
+- [x] **2.12 README-Status + Pre-Release** (2026-10-30: Tag `v0.1.0-alpha`, Binaries für macOS (signiert + notarisiert), Linux und Windows)
+  - README: Abschnitt „Stand v0.1.0-alpha“ mit den Grenzen. Tag `v0.1.0-alpha`, lokal gebautes Binary für den Teamtest.
 - [ ] **2.13 Manueller Test mit echtem Kiro (mit dem Pre-Release-Binary)**
   - Installation genau nach README aus 2.12, dann zwei Clones auf einem Rechner: `kmob next` → `kmob start` → `/chat load` → Kontextfrage beantworten lassen (wie Spike S2).
   - Dabei den offenen Punkt aus Spike S9 klären: `KIRO_SESSION_ID` nach `/chat load` und `/chat new`. Das Ergebnis in spike.md eintragen, es beeinflusst M4.
-  - Schlägt der Test fehl: beheben, `v0.1.0-alpha.2` taggen, Test wiederholen. Erst danach geht das Binary ans Team.
+  - Schlägt der Test fehl: beheben, `v0.1.0-alpha.1` taggen, Test wiederholen. Erst danach geht das Binary ans Team.
 
 **Grenzen (dokumentiert):** nur „zuletzt aktive Session“, nur eingebaute Muster, keine Prüfung auf `.gitignore`, alte `.kmob/` wird bei fehlender Session **nicht** entfernt (kommt in 4.4), kein Hinweis bei abgelehntem Push, `done` ohne Wiederherstellung und ohne Done-Modus-Prüfung.
 **Checkpoint M2 (wichtigster):** Teamtest über ca. 1–2 Wochen. Auswerten: Wird die geladene Session genutzt? Wie groß werden die Sessions? Wo hakt es? Danach die Reihenfolge von M3–M7 neu priorisieren.
