@@ -99,7 +99,7 @@ fun checkSources(sourceRoot: File, displayRoot: File): List<ArchViolation> {
     return violations
 }
 
-val checkArchitecture by tasks.registering {
+val checkArchitecture = tasks.register("checkArchitecture") {
     group = "verification"
     description = "Prüft Schichtregeln und OS-freien Kern in src/commonMain (design §3.3)."
     val sources = layout.projectDirectory.dir("src/commonMain/kotlin")
@@ -114,7 +114,7 @@ val checkArchitecture by tasks.registering {
     }
 }
 
-val checkArchitectureSelfTest by tasks.registering {
+val checkArchitectureSelfTest = tasks.register("checkArchitectureSelfTest") {
     group = "verification"
     description = "Selbsttest: jede mit '// expect: <regel>' markierte Zeile in src/archTest muss gemeldet werden."
     val sources = layout.projectDirectory.dir("src/archTest/kotlin")

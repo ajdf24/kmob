@@ -10,7 +10,7 @@ group = "de.kmob"
 
 // BuildInfo.kt mit der Version aus gradle.properties generieren (design §9)
 val generatedDir = layout.buildDirectory.dir("generated/buildinfo/kotlin")
-val generateBuildInfo by tasks.registering {
+val generateBuildInfo = tasks.register("generateBuildInfo") {
     val version = project.version.toString()
     val outDir = generatedDir
     inputs.property("version", version)
