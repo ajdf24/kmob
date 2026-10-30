@@ -489,4 +489,26 @@ class CharacterizationTest {
         assertEquals(listOf(MOB, "next", "-m"), h.mobCalls.single())
     }
 
+    @Test
+    fun pathComparisonEdgeCasesOnPosix() {
+        // Verhalten von M2 (String-Vergleich mit '/'), festgehalten nach dem Review des Refactorings
+        val within = { path: String, root: String -> de.kmob.domain.session.isWithin(path, root, '/') }
+        assertFalse(within("/repo\\x", "/repo"), "Backslash ist auf POSIX kein Trenner")
+        assertFalse(within("//repo", "/repo"))
+        assertFalse(within("/./repo", "/repo"))
+        assertFalse(within("/repo/x", "/repo//x"))
+        assertTrue(within("", "/"))
+        assertTrue(within("/anything", "/"))
+        assertTrue(within("/repo/../other", "/repo"), "nur aufgelöste Pfade werden verglichen")
+    }
+
+    @Test
+    fun pathComparisonWithWindowsSeparator() {
+        val within = { path: String, root: String -> de.kmob.domain.session.isWithin(path, root, '\\') }
+        assertTrue(within("C:\\work\\repo\\sub", "C:\\work\\repo"))
+        assertTrue(within("C:\\work\\repo\\", "C:\\work\\repo"))
+        assertFalse(within("C:\\work\\repo-x", "C:\\work\\repo"))
+        assertTrue(within("C:\\work", "C:\\"))
+        assertTrue(within("\\\\server\\share\\repo\\x", "\\\\server\\share\\repo"))
+    }
 }

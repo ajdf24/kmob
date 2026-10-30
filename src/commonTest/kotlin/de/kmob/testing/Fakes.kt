@@ -15,6 +15,7 @@ class FakePlatform(
     var nowValue: Instant = Instant.parse("2026-10-29T13:20:00Z"),
     var home: String = "/home/user",
 ) : Platform {
+    override val pathSeparator = '/'
     val stdout = mutableListOf<String>()
     val stderr = mutableListOf<String>()
 

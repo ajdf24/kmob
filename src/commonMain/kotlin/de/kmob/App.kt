@@ -1,72 +1,61 @@
 package de.kmob
 
-import de.kmob.cli.Args
-import de.kmob.cli.Command
-import de.kmob.cli.Commands
-import de.kmob.git.Git
-import de.kmob.cli.Invocation
-import de.kmob.mob.Mob
+import de.kmob.adapter.console.PlatformConsole
+import de.kmob.adapter.git.GitCli
+import de.kmob.adapter.kiro.ArtifactFiles
+import de.kmob.adapter.kiro.SessionStore
+import de.kmob.adapter.mob.MobBinary
+import de.kmob.adapter.secrets.BuiltinScanner
+import de.kmob.adapter.state.FileLocalState
+import de.kmob.application.FinishMob
+import de.kmob.application.FirstHandoverNotice
+import de.kmob.application.HandOverSession
+import de.kmob.application.TakeOverSession
+import de.kmob.cli.KmobCli
 import de.kmob.platform.Platform
 import de.kmob.platform.ProcessRunner
 import okio.FileSystem
+import kotlin.time.Clock
+import kotlin.time.Instant
 
-/** Verdrahtung und Befehlsauswahl. Liefert den Exit-Code (design §4.2). */
-class App(
-    private val platform: Platform,
-    private val runner: ProcessRunner,
-    private val fs: FileSystem,
-) {
-    private val out = Output(platform)
-    private val mob = Mob(platform, runner)
-    private val commands = Commands(platform, fs, Git(platform, runner), mob, out)
+/**
+ * Verdrahtung (design §3.1): baut Adapter und Use Cases aus den Plattform-Ports.
+ * Einzige Stelle, die alle Schichten kennt. Liefert den Exit-Code.
+ */
+class App(platform: Platform, runner: ProcessRunner, fs: FileSystem) {
+    private val cli: KmobCli
 
-    fun run(args: List<String>): Int = try {
-        val inv = Args.parse(args, platform::env)
-        out.debugEnabled = inv.debug
-        out.debug { "command=${inv.command} mobArgs=${inv.mobArgs}" }
-        dispatch(inv)
-    } catch (e: KmobException) {
-        out.error(e.message ?: "error")
-        e.exitCode
+    init {
+        val console = PlatformConsole(platform)
+        val mob = MobBinary(platform, runner)
+        val git = GitCli(platform, runner)
+        val artifacts = ArtifactFiles(fs)
+        val clock = object : Clock {
+            override fun now(): Instant = platform.now()
+        }
+        val handOver = HandOverSession(
+            mob = mob,
+            git = git,
+            sessions = SessionStore(fs, platform, console),
+            artifacts = artifacts,
+            scanner = BuiltinScanner(fs),
+            localStateAt = { stateDir -> FileLocalState(fs, stateDir) },
+            notice = FirstHandoverNotice(console),
+            console = console,
+            clock = clock,
+            kmobVersion = BuildInfo.VERSION,
+            pathSeparator = platform.pathSeparator,
+        )
+        cli = KmobCli(
+            console = console,
+            mob = mob,
+            handOver = handOver,
+            takeOver = TakeOverSession(mob, git, artifacts, console),
+            finish = FinishMob(mob, git, artifacts, console),
+            env = platform::env,
+            version = BuildInfo.VERSION,
+        )
     }
 
-    private fun dispatch(inv: Invocation): Int = when (inv.command) {
-        Command.PASSTHROUGH -> mob.run(inv.mobArgs)
-        Command.NEXT -> commands.next(inv)
-        Command.START -> commands.start(inv)
-        Command.DONE -> commands.done(inv)
-        Command.VERSION -> version()
-        Command.HELP -> help()
-    }
-
-    private fun version(): Int {
-        out.stdout("kmob ${BuildInfo.VERSION}")
-        return mob.run(listOf("version"))
-    }
-
-    private fun help(): Int {
-        HELP_TEXT.lines().forEach(out::stdout)
-        return mob.run(listOf("help"))
-    }
-
-    companion object {
-        val HELP_TEXT = """
-            |kmob ${BuildInfo.VERSION} – mob.sh with Kiro session handover
-            |
-            |kmob extends 'next', 'start' and 'done' and passes every other command unchanged to mob.
-            |  kmob next    hand over your Kiro session (.kmob/ in the git root) together with the code
-            |  kmob start   after mob start: show how to load the handed-over session in Kiro
-            |  kmob done    remove .kmob/ before mob done, so no session files end up on the base branch
-            |
-            |kmob options (after the command):
-            |  --yes        next, done: skip confirmations             (KMOB_YES=true)
-            |  --debug      next, start, done: debug output, also passed to mob  (KMOB_DEBUG=true)
-            |
-            |Environment:
-            |  KMOB_MOB_BIN             path to the mob binary (default: mob in PATH)
-            |  KMOB_KIRO_SESSIONS_DIR   Kiro session directory (default: ~/.kiro/sessions/cli)
-            |
-            |mob help follows:
-            |""".trimMargin()
-    }
+    fun run(args: List<String>): Int = cli.run(args)
 }

@@ -1,0 +1,251 @@
+package = de.kmob.cinterop.windows
+linkerOpts = -lshell32
+---
+/*
+ * Kleiner C-Shim für den Prozessstart unter Windows (design §5.9, R9.3, R9.8).
+ * Unicode-APIs durchgehend; Kommandozeile wird in Kotlin gequotet (WindowsCommandLine).
+ */
+#include <windows.h>
+#include <shellapi.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* Während kmob auf das Kind wartet, verschluckt kmob Ctrl+C/Ctrl+Break; das Kind behält die Default-Behandlung. */
+static BOOL WINAPI kmob_ignore_ctrl(DWORD type) {
+    return type == CTRL_C_EVENT || type == CTRL_BREAK_EVENT;
+}
+
+static HANDLE kmob_inheritable(DWORD which) {
+    HANDLE h = GetStdHandle(which);
+    HANDLE dup = NULL;
+    if (h == NULL || h == INVALID_HANDLE_VALUE) return NULL;
+    if (!DuplicateHandle(GetCurrentProcess(), h, GetCurrentProcess(), &dup, 0, TRUE, DUPLICATE_SAME_ACCESS)) return NULL;
+    return dup;
+}
+
+static void kmob_close(HANDLE h) {
+    if (h != NULL && h != INVALID_HANDLE_VALUE) CloseHandle(h);
+}
+
+/* Startet application mit cmdline und den Handles, wartet und liefert den Exit-Code; -1 = Startfehler (*error gesetzt). */
+static long long kmob_spawn_wait(const wchar_t *application, wchar_t *cmdline, HANDLE in, HANDLE out, HANDLE err,
+                                 unsigned long *error) {
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
+    DWORD code = 0;
+    memset(&si, 0, sizeof(si));
+    memset(&pi, 0, sizeof(pi));
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = in;
+    si.hStdOutput = out;
+    si.hStdError = err;
+    SetConsoleCtrlHandler(kmob_ignore_ctrl, TRUE);
+    if (!CreateProcessW(application, cmdline, NULL, NULL, TRUE, CREATE_UNICODE_ENVIRONMENT, NULL, NULL, &si, &pi)) {
+        *error = GetLastError();
+        SetConsoleCtrlHandler(kmob_ignore_ctrl, FALSE);
+        return -1;
+    }
+    CloseHandle(pi.hThread);
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hProcess);
+    SetConsoleCtrlHandler(kmob_ignore_ctrl, FALSE);
+    return (long long)code;
+}
+
+/* Exit-Code des Kinds (0..0xFFFFFFFF) oder -1 bei Startfehler (*error = GetLastError). */
+static long long kmob_win_run_inherit(const wchar_t *application, wchar_t *cmdline, unsigned long *error) {
+    HANDLE in = kmob_inheritable(STD_INPUT_HANDLE);
+    HANDLE out = kmob_inheritable(STD_OUTPUT_HANDLE);
+    HANDLE err = kmob_inheritable(STD_ERROR_HANDLE);
+    long long rc = kmob_spawn_wait(application, cmdline, in, out, err, error);
+    kmob_close(in);
+    kmob_close(out);
+    kmob_close(err);
+    return rc;
+}
+
+typedef struct {
+    HANDLE pipe;
+    char *data;
+    size_t len;
+    size_t cap;
+    int out_of_memory; /* weiterlesen und verwerfen, damit das Kind nicht an einer vollen Pipe hängt */
+} kmob_reader;
+
+static DWORD WINAPI kmob_read_all(LPVOID arg) {
+    kmob_reader *r = (kmob_reader *)arg;
+    char chunk[65536];
+    DWORD n = 0;
+    while (ReadFile(r->pipe, chunk, sizeof(chunk), &n, NULL) && n > 0) {
+        if (r->out_of_memory) continue;
+        if (r->len + n + 1 > r->cap) {
+            size_t nc = r->cap ? r->cap : 4096;
+            char *nb;
+            while (r->len + n + 1 > nc) nc *= 2;
+            nb = (char *)realloc(r->data, nc);
+            if (!nb) { r->out_of_memory = 1; continue; }
+            r->data = nb;
+            r->cap = nc;
+        }
+        memcpy(r->data + r->len, chunk, n);
+        r->len += n;
+        r->data[r->len] = 0;
+    }
+    return 0;
+}
+
+/*
+ * stdin = NUL, stdout/stderr über Pipes, gelesen von zwei Threads (kein Deadlock bei voller Pipe).
+ * *out/*err werden mit malloc angelegt (oder NULL) und müssen mit free freigegeben werden.
+ * Rückgabe: Exit-Code oder -1 (*error = GetLastError, *out/*err = NULL).
+ */
+static long long kmob_win_run_capture(const wchar_t *application, wchar_t *cmdline,
+                                      char **out, size_t *out_len, char **err, size_t *err_len, unsigned long *error) {
+    SECURITY_ATTRIBUTES sa;
+    HANDLE out_read = NULL, out_write = NULL, err_read = NULL, err_write = NULL, nul = INVALID_HANDLE_VALUE;
+    HANDLE threads[2] = { NULL, NULL };
+    kmob_reader readers[2];
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
+    DWORD code = 0;
+    long long rc = -1;
+    int started = 0, i;
+    *out = NULL; *err = NULL; *out_len = 0; *err_len = 0;
+    memset(readers, 0, sizeof(readers));
+    memset(&si, 0, sizeof(si));
+    memset(&pi, 0, sizeof(pi));
+    sa.nLength = sizeof(sa);
+    sa.lpSecurityDescriptor = NULL;
+    sa.bInheritHandle = TRUE;
+
+    if (!CreatePipe(&out_read, &out_write, &sa, 0) || !CreatePipe(&err_read, &err_write, &sa, 0)) goto fail;
+    SetHandleInformation(out_read, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(err_read, HANDLE_FLAG_INHERIT, 0);
+    nul = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, NULL);
+    if (nul == INVALID_HANDLE_VALUE) goto fail;
+    readers[0].pipe = out_read;
+    readers[1].pipe = err_read;
+    for (i = 0; i < 2; i++) {
+        threads[i] = CreateThread(NULL, 0, kmob_read_all, &readers[i], 0, NULL);
+        if (threads[i] == NULL) goto fail;
+    }
+
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = nul;
+    si.hStdOutput = out_write;
+    si.hStdError = err_write;
+    if (!CreateProcessW(application, cmdline, NULL, NULL, TRUE, CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
+                        NULL, NULL, &si, &pi)) goto fail;
+    started = 1;
+    CloseHandle(pi.hThread);
+    /* Schreibende Enden schließen, sobald das Kind sie geerbt hat – erst dann melden die Pipes EOF. */
+    kmob_close(out_write); out_write = NULL;
+    kmob_close(err_write); err_write = NULL;
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hProcess);
+    rc = (long long)code;
+
+fail:
+    if (!started) *error = GetLastError();
+    /* Alle schreibenden Enden zu → laufende Lese-Threads sehen EOF und enden. */
+    kmob_close(out_write);
+    kmob_close(err_write);
+    kmob_close(nul);
+    for (i = 0; i < 2; i++) {
+        if (threads[i] != NULL) {
+            WaitForSingleObject(threads[i], INFINITE);
+            CloseHandle(threads[i]);
+        }
+    }
+    kmob_close(out_read);
+    kmob_close(err_read);
+    if (!started || readers[0].out_of_memory || readers[1].out_of_memory) {
+        if (started && rc >= 0) { *error = ERROR_NOT_ENOUGH_MEMORY; rc = -1; }
+        free(readers[0].data);
+        free(readers[1].data);
+        return -1;
+    }
+    *out = readers[0].data; *out_len = readers[0].len;
+    *err = readers[1].data; *err_len = readers[1].len;
+    return rc;
+}
+
+/* Kanonischer Pfad über das Dateisystem (Symlinks, Junctions, Schreibweise). Liefert Länge oder 0. */
+static unsigned long kmob_win_final_path(const wchar_t *path, wchar_t *buffer, unsigned long size) {
+    DWORD n;
+    HANDLE h = CreateFileW(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
+                           FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (h == INVALID_HANDLE_VALUE) return 0;
+    n = GetFinalPathNameByHandleW(h, buffer, size, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+    CloseHandle(h);
+    return n < size ? n : 0;
+}
+
+/* 1 = Konsole, 0 = umgeleitet (Datei, Pipe, mintty ohne winpty). */
+static int kmob_win_is_console(DWORD which) {
+    DWORD mode = 0;
+    HANDLE h = GetStdHandle(which);
+    return h != NULL && h != INVALID_HANDLE_VALUE && GetConsoleMode(h, &mode) ? 1 : 0;
+}
+
+/* Text in die Konsole (UTF-16) oder als UTF-8-Bytes in Datei/Pipe (R9.7). */
+static void kmob_win_write(DWORD which, const wchar_t *text, int text_len, const char *utf8, int utf8_len) {
+    HANDLE h = GetStdHandle(which);
+    DWORD written = 0;
+    if (h == NULL || h == INVALID_HANDLE_VALUE) return;
+    if (kmob_win_is_console(which)) {
+        WriteConsoleW(h, text, (DWORD)text_len, &written, NULL);
+    } else {
+        int off = 0;
+        while (off < utf8_len && WriteFile(h, utf8 + off, (DWORD)(utf8_len - off), &written, NULL) && written > 0) {
+            off += (int)written;
+        }
+    }
+}
+
+/* Eine Zeile aus der Konsole (UTF-16, ohne CR/LF) in buffer; Länge, -1 bei EOF. */
+static int kmob_win_read_console_line(wchar_t *buffer, int size) {
+    HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD n = 0;
+    int len;
+    if (!ReadConsoleW(h, buffer, (DWORD)(size - 1), &n, NULL) || n == 0) return -1;
+    len = (int)n;
+    while (len > 0 && (buffer[len - 1] == L'\n' || buffer[len - 1] == L'\r')) len--;
+    if (len == 1 && buffer[0] == 26) return -1; /* Ctrl+Z = EOF */
+    buffer[len] = 0;
+    return len;
+}
+
+/* Ein Byte von stdin (umgeleitet); -1 bei EOF. */
+static int kmob_win_read_byte(void) {
+    unsigned char c;
+    DWORD n = 0;
+    if (!ReadFile(GetStdHandle(STD_INPUT_HANDLE), &c, 1, &n, NULL) || n == 0) return -1;
+    return c;
+}
+
+/* Systemmeldung zu einem Fehlercode (UTF-16) in buffer; Länge. */
+static unsigned long kmob_win_error_message(unsigned long code, wchar_t *buffer, unsigned long size) {
+    DWORD n = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, code, 0, buffer, size, NULL);
+    while (n > 0 && (buffer[n - 1] == L'\n' || buffer[n - 1] == L'\r' || buffer[n - 1] == L' ' || buffer[n - 1] == L'.')) n--;
+    if (n < size) buffer[n] = 0;
+    return n;
+}
+
+/* Kommandozeile von kmob selbst (UTF-16), für die Argumente (R9.3, R9.9). */
+static const wchar_t *kmob_win_command_line(void) {
+    return GetCommandLineW();
+}
+
+/* Zerlegung wie die C-Runtime; Ergebnis mit kmob_win_free_argv freigeben. NULL bei Fehler. */
+static wchar_t **kmob_win_split_command_line(const wchar_t *line, int *argc) {
+    return CommandLineToArgvW(line, argc);
+}
+
+static void kmob_win_free_argv(wchar_t **argv) {
+    if (argv != NULL) LocalFree(argv);
+}

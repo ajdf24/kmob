@@ -136,17 +136,18 @@ Ziel: Der Code ist lesbar und nach design §3 geschnitten, der Kern enthält kei
   - E2E: Startfehler (`KMOB_MOB_BIN` auf Skript mit fehlendem Interpreter).
   - Fertig: alle neuen Tests grün **gegen den alten Code**, als eigener Commit vor dem Refactoring.
     Ergebnis: 39 Charakterisierungstests + 1 E2E-Fall grün gegen M2. Befund: `handover.json` enthält `schema` nicht (Default wird nicht serialisiert), Abweichung von design §5.8 – bewusst festgehalten und nicht geändert, Korrektur als eigene fachliche Änderung.
-- [ ] **2r.2 Plattformschicht schneiden** – R10.2, design §3.1, §3.2
+- [x] **2r.2 Plattformschicht schneiden** – R10.2, design §3.1, §3.2
   - Source-Sets `posixMain`/`posixTest` (macOS + Linux), `nativeMain` nur noch Einstieg und neutrale Hilfen (`ExecutableSearch`). C-Shim nach `posix.def`.
   - `ProcessStartException` im Port statt `SpawnException` in `main` (gleiche Meldung, Exit 1).
   - Pfadlogik im Kern über Okio statt `'/'`-String-Operationen (`isWithin`, Session-Verzeichnis).
-- [ ] **2r.3 Domäne, Anwendung, Adapter, CLI** – R10.1, R10.5, design §3.1, §3.4
+- [x] **2r.3 Domäne, Anwendung, Adapter, CLI** – R10.1, R10.5, design §3.1, §3.4
   - Pakete laut design §3.5; Use Cases `HandOverSession`, `TakeOverSession`, `FinishMob` als Folge benannter Schritte; Ports für mob, Git, Sessions, Scanner, Artefakte, Merker, Konsole.
   - `KmobPaths` als einzige Stelle für `.kmob`, `tmp`, Merker; `HandoverInfo` mit camelCase + `@SerialName`; Titelformat nur einmal.
-- [ ] **2r.4 Architekturprüfung** – R10.3, design §3.3
+- [x] **2r.4 Architekturprüfung** – R10.3, design §3.3
   - `checkArchitecture` + Selbsttest, an `check` gehängt; CI nutzt `./gradlew build` (enthält `check`).
-- [ ] **2r.5 Abnahme**
+- [x] **2r.5 Abnahme**
   - Unit-Tests und `./e2e/run.sh` grün; Diff der Testdateien zeigt keine geänderten Assertions (`git diff` auf `assert`-Zeilen der Tests aus 2r.1 und davor).
+    Ergebnis: 123 → 123 Tests (vor den Windows-Ergänzungen), E2E 43/43; Assertions identisch bis auf umbenannte Kotlin-Bezeichner (`log_entries` → `logEntries`, `SpawnException` → `ProcessStartException`) und den Konstruktor `BuiltinScanner(fs)`. Unabhängiges Review: Charakterisierungstests gegen HEAD gegengeprüft (39/39 grün); eine Abweichung in `isWithin` (Okio-Segmente, `\` als Trenner auf POSIX) gefunden und auf das M2-Verhalten zurückgesetzt, Randfälle als Tests ergänzt. Stand danach: 139 Unit-Tests auf macOS.
 
 **Checkpoint M2r:** Code-Review der neuen Struktur.
 
@@ -156,18 +157,18 @@ Ziel: Der Code ist lesbar und nach design §3 geschnitten, der Kern enthält kei
 
 Ziel: kmob baut und läuft unter Windows x64 (R9). Freigabe fürs Team erst nach Spike S11.
 
-- [ ] **2w.1 Target `mingwX64`** – design §2, §3.5
+- [x] **2w.1 Target `mingwX64`** – design §2, §3.5
   - Target, `mingwMain`/`mingwTest`, `windows.def`; `main` und Verdrahtung über `expect`/`actual` für die Plattform-Implementierungen.
   - Fertig: `./gradlew linkReleaseExecutableMingwX64` auf macOS grün (Cross-Build).
-- [ ] **2w.2 Neutrale Hilfen** – R9.2, R9.3, design §5.9
+- [x] **2w.2 Neutrale Hilfen** – R9.2, R9.3, design §5.9
   - `ExecutableSearch` (POSIX und Windows-Konvention), `WindowsCommandLine.quote` + Referenz-Parser für den Roundtrip-Test. Tests in `nativeTest` (laufen auf macOS).
-- [ ] **2w.3 `WindowsPlatform`** – R9.4–R9.7, R9.9
+- [x] **2w.3 `WindowsPlatform`** – R9.4–R9.7, R9.9
   - `env`, `realPath`, `isInteractive`, `readLine`, `printOut`/`printErr` (Konsole vs. umgeleitet), `findInPath`, `isExecutable`, `homeDir`.
-- [ ] **2w.4 `WindowsProcessRunner`** – R9.3, R9.8
+- [x] **2w.4 `WindowsProcessRunner`** – R9.3, R9.8
   - C-Shim: `CreateProcessW`, vererbte Standard-Handles, Pipes mit zwei Lese-Threads, `NUL` als stdin, Ctrl+C-Handler während des Wartens. Startfehler → `ProcessStartException`.
-- [ ] **2w.5 `mingwTest`** – design §8 „Plattform“
+- [~] **2w.5 `mingwTest`** (kompiliert auf macOS, `linkDebugTestMingwX64`; noch nie gelaufen) – design §8 „Plattform“
   - Läuft nur unter Windows: `./gradlew mingwX64Test` manuell auf einem Windows-Rechner (zusammen mit 2w.7).
-- [ ] **2w.6 CI und Doku** – R8.1, design §9
+- [~] **2w.6 CI und Doku** (README fertig; Workflow-Job `build-windows` vorbereitet, CI ist aber nicht aktiv) – R8.1, design §9
   - CI-Job `windows-latest` (`mingwX64Test`, `checkArchitecture`, Release-Binary als Artefakt); Cross-Build-Schritt auf macOS. README: Voraussetzungen und Installation unter Windows, Status „ungetestet bis S11“.
 - [ ] **2w.7 Spike S11 auf einem Windows-Rechner** – spike.md S11
   - Ergebnisse eintragen; Abweichungen nur in der Plattformschicht oder den Defaults beheben.

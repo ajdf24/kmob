@@ -1,4 +1,5 @@
-import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
+import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
+import org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -31,13 +32,37 @@ val generateBuildInfo by tasks.registering {
 }
 
 kotlin {
-    val nativeTargets: List<KotlinNativeTarget> = listOf(macosArm64(), linuxX64())
-    nativeTargets.forEach { target ->
-        target.compilations.getByName("main").cinterops.create("kmobnative") {
-            definitionFile.set(project.file("src/nativeInterop/cinterop/kmobnative.def"))
+    // Schichten (design §3.1): commonMain = OS-freier Kern, nativeMain = neutrale Plattformhilfen + Einstieg,
+    // posixMain = macOS + Linux, mingwMain = Windows (Default-Gruppe "mingw").
+    @OptIn(ExperimentalKotlinGradlePluginApi::class)
+    applyDefaultHierarchyTemplate {
+        common {
+            group("native") {
+                group("posix") {
+                    withApple()
+                    withLinux()
+                }
+                group("mingw") {
+                    withMingw()
+                }
+            }
+        }
+    }
+
+    val posixTargets = listOf(macosArm64(), linuxX64())
+    posixTargets.forEach { target ->
+        target.compilations.getByName("main").cinterops.create("posix") {
+            definitionFile.set(project.file("src/nativeInterop/cinterop/posix.def"))
         }
         // Release-Testbinary für Messungen (PerfTest)
-        target.binaries.test(listOf(org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType.RELEASE))
+        target.binaries.test(listOf(NativeBuildType.RELEASE))
+    }
+    val windows = mingwX64()
+    windows.compilations.getByName("main").cinterops.create("windows") {
+        definitionFile.set(project.file("src/nativeInterop/cinterop/windows.def"))
+    }
+
+    (posixTargets + windows).forEach { target ->
         target.binaries.executable {
             baseName = "kmob"
             entryPoint = "de.kmob.main"
@@ -67,3 +92,5 @@ kotlin {
     }
 }
 
+
+apply(from = "gradle/architecture.gradle.kts")

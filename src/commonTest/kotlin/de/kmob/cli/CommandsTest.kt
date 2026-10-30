@@ -1,9 +1,10 @@
 package de.kmob.cli
 
 import de.kmob.App
-import de.kmob.kiro.HandoverInfo
+import de.kmob.adapter.kiro.MutableClock
+import de.kmob.domain.handover.HandoverInfo
 import de.kmob.platform.Captured
-import de.kmob.secrets.Fixtures
+import de.kmob.adapter.secrets.Fixtures
 import de.kmob.testing.FakePlatform
 import de.kmob.testing.FakeRunner
 import okio.Path.Companion.toPath
@@ -15,7 +16,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class CommandsTest {
-    private val fs = FakeFileSystem(de.kmob.kiro.MutableClock(kotlin.time.Instant.parse("2026-10-29T12:00:00Z")))
+    private val fs = FakeFileSystem(MutableClock(kotlin.time.Instant.parse("2026-10-29T12:00:00Z")))
     private val platform = FakePlatform(home = "/home/u")
     private val runner = FakeRunner()
     private val app = App(platform, runner, fs)
@@ -70,7 +71,7 @@ class CommandsTest {
         val info = HandoverInfo.decodeOrNull(fs.read(handover) { readUtf8() })
         assertNotNull(info)
         assertEquals("Anna", info.from)
-        assertEquals(1, info.log_entries)
+        assertEquals(1, info.logEntries)
         assertEquals(listOf("/usr/bin/mob", "next", "--stay"), mobCalls.single())
         assertTrue(platform.errText.contains("handing over Kiro session s1 \"Refactoring\""), platform.errText)
         assertFalse(fs.exists("$root/.git/kmob/tmp".toPath()), "tmp removed")

@@ -1,6 +1,6 @@
 package de.kmob.cli
 
-import de.kmob.UsageException
+import de.kmob.domain.UsageException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith

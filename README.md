@@ -21,13 +21,13 @@ Die Alpha kann bereits übergeben, übernehmen und aufräumen (`kmob next`/`star
 - Findet kmob keine Session, bleibt eine alte `.kmob/` aus einer früheren Runde vorerst liegen und wird weitergegeben.
 - Es gibt keine Prüfung auf ignoriertes `.kmob/`, keine Größenwarnung und keinen Hinweis bei abgelehntem Push.
 - `kmob done`: Der Done-Modus (`--no-squash`, `--squash-wip`) wird nicht geprüft, und nach einem fehlgeschlagenen `mob done` wird nichts wiederhergestellt.
-- Als Optionen gibt es nur `--yes` und `--debug` (bzw. `KMOB_YES`/`KMOB_DEBUG`). Unterstützt wird nur macOS (Apple Silicon); das Linux-Binary ist noch ungetestet.
+- Als Optionen gibt es nur `--yes` und `--debug` (bzw. `KMOB_YES`/`KMOB_DEBUG`). Getestet ist nur macOS (Apple Silicon). Das Linux-Binary ist noch ungetestet. Das Windows-Binary (`kmob.exe`) wird gebaut, auf einem Windows-Rechner aber erst noch geprüft ([Spike S11](.kiro/specs/kmob/spike.md)).
 
 Für den Teamtest: Binary mit `./gradlew linkReleaseExecutableMacosArm64` bauen (Ergebnis `build/bin/macosArm64/releaseExecutable/kmob.kexe`) und als `kmob` in den `PATH` legen.
 
 ## Voraussetzungen
 
-- macOS (Apple Silicon) oder Linux x64. Intel-Macs und Windows werden nicht unterstützt.
+- macOS (Apple Silicon), Linux x64 oder Windows 10/11 x64 (experimentell, siehe Status). Intel-Macs werden nicht unterstützt.
 - [mob](https://mob.sh) im `PATH` (getestet mit 5.4.2)
 - [Kiro CLI](https://kiro.dev) (getestet mit 2.21.1)
 - git
@@ -43,6 +43,8 @@ xattr -d com.apple.quarantine kmob   # nur macOS: Binary ist nicht signiert
 mv kmob /usr/local/bin/
 kmob version
 ```
+
+Unter Windows (PowerShell) entpackst du `kmob-<version>-mingwX64.zip` und legst `kmob.exe` in ein Verzeichnis im `PATH`. kmob startet nur `.exe`- und `.com`-Programme. Liegt mob nur als `.cmd`-Shim vor, setzt du `KMOB_MOB_BIN` auf die `mob.exe`. In Git Bash/mintty gilt kmob als „ohne Terminal“. Rückfragen bestätigst du dort mit `--yes`.
 
 `kmob version` zeigt die eigene Version sowie die von gitleaks und mob. `kmob help` beschreibt die kmob-Optionen und zeigt danach die Hilfe von mob.
 
@@ -199,8 +201,11 @@ Die Session wird **ins Git-Remote gepusht**, und zwar vollständig: deine Prompt
 ## Entwicklung
 
 ```bash
-./gradlew build          # bauen + Unit-Tests (Host-Plattform)
+./gradlew build          # bauen, Unit-Tests (Host-Plattform), Architekturprüfung (checkArchitecture)
+./gradlew linkReleaseExecutableMingwX64   # Windows-Binary (auch auf macOS), Tests dafür nur unter Windows
 ./e2e/run.sh             # End-to-End gegen lokales Bare-Repo (mob erforderlich, gitleaks optional)
 ```
+
+Aufbau: Der Kern (`src/commonMain`) ist in Domäne, Anwendung, Adapter und CLI geschichtet und enthält keine Betriebssystem-Logik. Diese steckt in `posixMain` (macOS, Linux) und `mingwMain` (Windows), siehe [design §3](.kiro/specs/kmob/design.md#3-architektur).
 
 Spezifikation: [requirements](.kiro/specs/kmob/requirements.md) · [design](.kiro/specs/kmob/design.md) · [spike](.kiro/specs/kmob/spike.md)

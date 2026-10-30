@@ -26,3 +26,28 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
       - name: Build and unit tests
         run: ./gradlew build
+      - name: Cross-build Windows binary
+        run: ./gradlew linkReleaseExecutableMingwX64
+
+  # Windows (R9, tasks 2w.6): Plattformtests laufen nur hier. E2E unter Windows folgt nach Spike S11.
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.konan
+          key: ${{ runner.os }}-gradle-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
+      - name: Unit and platform tests
+        run: ./gradlew mingwX64Test checkArchitecture linkReleaseExecutableMingwX64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kmob-mingwX64
+          path: build/bin/mingwX64/releaseExecutable/kmob.exe
