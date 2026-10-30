@@ -166,15 +166,16 @@ Ziel: kmob baut und läuft unter Windows x64 (R9). Freigabe fürs Team erst nach
   - `env`, `realPath`, `isInteractive`, `readLine`, `printOut`/`printErr` (Konsole vs. umgeleitet), `findInPath`, `isExecutable`, `homeDir`.
 - [x] **2w.4 `WindowsProcessRunner`** – R9.3, R9.8
   - C-Shim: `CreateProcessW`, vererbte Standard-Handles, Pipes mit zwei Lese-Threads, `NUL` als stdin, Ctrl+C-Handler während des Wartens. Startfehler → `ProcessStartException`.
-- [~] **2w.5 `mingwTest`** (kompiliert auf macOS, `linkDebugTestMingwX64`; noch nie gelaufen) – design §8 „Plattform“
-  - Läuft nur unter Windows: `./gradlew mingwX64Test` manuell auf einem Windows-Rechner (zusammen mit 2w.7).
-- [~] **2w.6 CI und Doku** (README fertig; Workflow-Job `build-windows` vorbereitet, CI ist aber nicht aktiv) – R8.1, design §9
+- [x] **2w.5 `mingwTest`** (2026-10-30: CI-Job `build-windows` auf `windows-latest` grün, alle Tests inkl. Windows-Plattformtests) – design §8 „Plattform“
+  - Läuft nur unter Windows: im CI-Job `build-windows` oder manuell mit `./gradlew mingwX64Test`.
+  - Erster Lauf: `captureStdinIsEmpty` schlug fehl (Test über `cmd /c more` ungeeignet), ersetzt durch direkte Messung über PowerShell.
+- [x] **2w.6 CI und Doku** (README fertig; CI-Job `build-windows` grün, `kmob.exe` als Artefakt `kmob-mingwX64`) – R8.1, design §9
   - CI-Job `windows-latest` (`mingwX64Test`, `checkArchitecture`, Release-Binary als Artefakt); Cross-Build-Schritt auf macOS. README: Voraussetzungen und Installation unter Windows, Status „ungetestet bis S11“.
 - [ ] **2w.7 Spike S11 auf einem Windows-Rechner** – spike.md S11
   - Ergebnisse eintragen; Abweichungen nur in der Plattformschicht oder den Defaults beheben.
 
 **Grenzen:** kein E2E unter Windows bis S11; `.cmd`/`.bat` werden nicht gestartet.
-**Checkpoint M2w:** Ergebnis S11 und `./gradlew mingwX64Test` unter Windows grün.
+**Checkpoint M2w:** Ergebnis S11 (offen); `mingwX64Test` unter Windows grün (erledigt).
 
 ---
 
