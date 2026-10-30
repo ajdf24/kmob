@@ -128,3 +128,22 @@ Getestet manuell (kiro-cli 2.21.1), 2026-10-30.
 **Folgerung:** `kmob start` kann außerhalb von Kiro `kiro-cli chat "/chat load <pfad>"` starten. kmob nutzt damit den offiziellen Ladeweg und schreibt nichts in Kiros Session-Verzeichnis. Innerhalb von Kiro bleibt es beim Lade-Hinweis.
 
 **Offen (manueller Test vor Release):** Pfad mit Leerzeichen als Teil des Slash-Befehls.
+
+## S11 – Windows (offen)
+
+Stand 2026-10-30: Kiro CLI läuft seit 2.0 nativ unter Windows 11 (PowerShell), mob.sh bietet ein Windows-Binary. `mingwX64` lässt sich mit Kotlin 2.4.21 auf macOS cross-kompilieren (Probe mit Okio und einem Win32-C-Shim: `PE32+ executable (console) x86-64`). Ein Windows-Rechner stand noch nicht zur Verfügung.
+
+Vor der Freigabe für Windows auf einem Windows-11-Rechner zu prüfen:
+
+1. Liegen die Sessions unter `%USERPROFILE%\.kiro\sessions\cli\` im selben Format (`{id}.json`, `.jsonl`, `.lock`)? Gilt `KIRO_HOME` (Kiro V3) auch für das Session-Verzeichnis?
+2. Format von `cwd` in den Metadaten (`C:\…`, Schreibweise, ggf. `\\?\`-Präfix) und ob `realPath` beides auf denselben Pfad abbildet wie `git rev-parse --show-toplevel` (`C:/…`).
+3. Zeilenenden im `.jsonl` (LF oder CRLF). kmob übernimmt Zeilen bis `\n` unverändert; ein `\r` bliebe als JSON-Whitespace erhalten.
+4. `/chat load C:\…\.kmob\kiro-session.json` und `kiro-cli chat "/chat load <pfad>"` (R3.5) mit Leerzeichen und Umlauten im Pfad.
+5. mob unter Windows: `mob.exe` aus dem Release oder per Scoop (ist der Shim eine `.exe`?), Verhalten von `mob next`/`done` mit `.kmob/`.
+6. Kommandozeilenargumente mit Nicht-ASCII-Zeichen kommen in `main(args)` von Kotlin/Native korrekt an (sonst `GetCommandLineW` + `CommandLineToArgvW` in der Plattformschicht).
+7. Ctrl+C während `kmob timer`: mob endet, kmob endet mit dessen Exit-Code.
+8. Git Bash/mintty: `isInteractive` ist dort `false` (R9.6), `--yes` funktioniert.
+9. Okio `FileSystem.SYSTEM` mit Nicht-ASCII-Pfaden (z. B. `C:\\Users\\Jürgen\\…`): Sessions lesen, `.kmob/` schreiben.
+10. `KMOB_MOB_BIN` als bloßer Name (z. B. `mob.exe`): geprüft wird im aktuellen Verzeichnis, gestartet über `PATH` – Verhalten festlegen (betrifft auch POSIX).
+
+Ergebnis hier eintragen; Abweichungen ändern nur die Plattformschicht oder Defaults (R10.2).

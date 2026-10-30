@@ -1,6 +1,6 @@
 # Tasks: kmob
 
-Status: v1 – basiert auf [requirements.md](requirements.md) v3 und [design.md](design.md) v2
+Status: v2 – basiert auf [requirements.md](requirements.md) v4 und [design.md](design.md) v3 (neu: M2r Refactoring, M2w Windows)
 
 ## Vorgehen
 
@@ -11,6 +11,8 @@ Inkrementell in Meilensteinen. Jeder Meilenstein endet mit einem **lauffähigen,
 | M0 | Projekt baut, Binary läuft | – |
 | M1 | kmob reicht alles an mob durch | Drop-in für `mob` |
 | M2 | **MVP**: Session-Übergabe im Happy Path, eingebauter Secret-Scan | erster Teamtest |
+| M2r | Refactoring: Schichtenarchitektur, OS-freier Kern, Clean Code – ohne Verhaltensänderung | Grundlage für alle weiteren Meilensteine |
+| M2w | Windows-Plattformschicht (`mingwX64`) | Teamtest unter Windows (nach Spike S11) |
 | M2b | `kmob start` startet Kiro direkt mit der Session | bequemer Teamtest |
 | M3 | gitleaks-Scan | sicherer Teamtest |
 | M4 | vollständige Session-Auswahl und Optionen | Alltagseinsatz |
@@ -22,7 +24,8 @@ Inkrementell in Meilensteinen. Jeder Meilenstein endet mit einem **lauffähigen,
 Konventionen für alle Tasks:
 - Jede Komponente bekommt ihre Unit-Tests im selben Task (R8.2). Der Task ist erst erledigt, wenn `./gradlew build` grün ist.
 - Verhalten, das nur mit echtem mob prüfbar ist, kommt in `e2e/run.sh` (R8.3).
-- Komponenten hängen nur von den Interfaces aus design.md §3 ab (`ProcessRunner`, `Platform`, Okio `FileSystem`). So bleiben Fakes in Tests möglich.
+- Komponenten hängen nur von den Ports aus design.md §3.2 ab (`ProcessRunner`, `Platform`, Okio `FileSystem`). So bleiben Fakes in Tests möglich.
+- Ab M2r: neue Logik kommt in die passende Schicht (design §3.1); `./gradlew check` enthält `checkArchitecture`. Betriebssystem-Logik nur in der Plattformschicht (R10.2).
 - Was ein Meilenstein bewusst weglässt, steht unter „Grenzen“. Das README beschreibt den tatsächlichen Stand.
 
 ---
@@ -121,6 +124,56 @@ Ziel: Ein Team kann die Übergabe ausprobieren. Bewusst schlank, aber **ohne Abs
 
 **Grenzen (dokumentiert):** nur „zuletzt aktive Session“, nur eingebaute Muster, keine Prüfung auf `.gitignore`, alte `.kmob/` wird bei fehlender Session **nicht** entfernt (kommt in 4.4), kein Hinweis bei abgelehntem Push, `done` ohne Wiederherstellung und ohne Done-Modus-Prüfung.
 **Checkpoint M2 (wichtigster):** Teamtest über ca. 1–2 Wochen. Auswerten: Wird die geladene Session genutzt? Wie groß werden die Sessions? Wo hakt es? Danach die Reihenfolge von M3–M7 neu priorisieren.
+
+---
+
+## M2r – Refactoring: Schichtenarchitektur und Clean Code
+
+Ziel: Der Code ist lesbar und nach design §3 geschnitten, der Kern enthält keine Betriebssystem-Logik. Das Verhalten bleibt **identisch** (R10.4).
+
+- [x] **2r.1 Charakterisierungstests** – R10.4, design §8
+  - Über `App(platform, runner, fs).run(...)`: `next` (vollständige stderr-Zeilen inkl. Erst-Hinweis, exakter Inhalt von `handover.json`, Exit-Code von mob nach Handover, alte `tmp/`-Reste werden geleert, `tmp/` auch nach Fehlern weg, detached HEAD, `KMOB_KIRO_SESSIONS_DIR`, Hinweis nur einmal, Auswahl bei mehreren Kandidaten, Debug-Zeilen), `start` (außerhalb Repo, mehrzeiliger/langer Titel, Argumente unverändert), `done` (außerhalb Repo, mob fehlt, mob scheitert → `.kmob/` bleibt gelöscht, Index-Fund löscht auch das Verzeichnis), `version`, `help` (vollständiger Text), Startfehler eines Programms → `kmob: cannot start …`, Exit 1.
+  - E2E: Startfehler (`KMOB_MOB_BIN` auf Skript mit fehlendem Interpreter).
+  - Fertig: alle neuen Tests grün **gegen den alten Code**, als eigener Commit vor dem Refactoring.
+    Ergebnis: 39 Charakterisierungstests + 1 E2E-Fall grün gegen M2. Befund: `handover.json` enthält `schema` nicht (Default wird nicht serialisiert), Abweichung von design §5.8 – bewusst festgehalten und nicht geändert, Korrektur als eigene fachliche Änderung.
+- [ ] **2r.2 Plattformschicht schneiden** – R10.2, design §3.1, §3.2
+  - Source-Sets `posixMain`/`posixTest` (macOS + Linux), `nativeMain` nur noch Einstieg und neutrale Hilfen (`ExecutableSearch`). C-Shim nach `posix.def`.
+  - `ProcessStartException` im Port statt `SpawnException` in `main` (gleiche Meldung, Exit 1).
+  - Pfadlogik im Kern über Okio statt `'/'`-String-Operationen (`isWithin`, Session-Verzeichnis).
+- [ ] **2r.3 Domäne, Anwendung, Adapter, CLI** – R10.1, R10.5, design §3.1, §3.4
+  - Pakete laut design §3.5; Use Cases `HandOverSession`, `TakeOverSession`, `FinishMob` als Folge benannter Schritte; Ports für mob, Git, Sessions, Scanner, Artefakte, Merker, Konsole.
+  - `KmobPaths` als einzige Stelle für `.kmob`, `tmp`, Merker; `HandoverInfo` mit camelCase + `@SerialName`; Titelformat nur einmal.
+- [ ] **2r.4 Architekturprüfung** – R10.3, design §3.3
+  - `checkArchitecture` + Selbsttest, an `check` gehängt; CI nutzt `./gradlew build` (enthält `check`).
+- [ ] **2r.5 Abnahme**
+  - Unit-Tests und `./e2e/run.sh` grün; Diff der Testdateien zeigt keine geänderten Assertions (`git diff` auf `assert`-Zeilen der Tests aus 2r.1 und davor).
+
+**Checkpoint M2r:** Code-Review der neuen Struktur.
+
+---
+
+## M2w – Windows
+
+Ziel: kmob baut und läuft unter Windows x64 (R9). Freigabe fürs Team erst nach Spike S11.
+
+- [ ] **2w.1 Target `mingwX64`** – design §2, §3.5
+  - Target, `mingwMain`/`mingwTest`, `windows.def`; `main` und Verdrahtung über `expect`/`actual` für die Plattform-Implementierungen.
+  - Fertig: `./gradlew linkReleaseExecutableMingwX64` auf macOS grün (Cross-Build).
+- [ ] **2w.2 Neutrale Hilfen** – R9.2, R9.3, design §5.9
+  - `ExecutableSearch` (POSIX und Windows-Konvention), `WindowsCommandLine.quote` + Referenz-Parser für den Roundtrip-Test. Tests in `nativeTest` (laufen auf macOS).
+- [ ] **2w.3 `WindowsPlatform`** – R9.4–R9.7, R9.9
+  - `env`, `realPath`, `isInteractive`, `readLine`, `printOut`/`printErr` (Konsole vs. umgeleitet), `findInPath`, `isExecutable`, `homeDir`.
+- [ ] **2w.4 `WindowsProcessRunner`** – R9.3, R9.8
+  - C-Shim: `CreateProcessW`, vererbte Standard-Handles, Pipes mit zwei Lese-Threads, `NUL` als stdin, Ctrl+C-Handler während des Wartens. Startfehler → `ProcessStartException`.
+- [ ] **2w.5 `mingwTest`** – design §8 „Plattform“
+  - Läuft nur unter Windows: `./gradlew mingwX64Test` manuell auf einem Windows-Rechner (zusammen mit 2w.7).
+- [ ] **2w.6 CI und Doku** – R8.1, design §9
+  - CI-Job `windows-latest` (`mingwX64Test`, `checkArchitecture`, Release-Binary als Artefakt); Cross-Build-Schritt auf macOS. README: Voraussetzungen und Installation unter Windows, Status „ungetestet bis S11“.
+- [ ] **2w.7 Spike S11 auf einem Windows-Rechner** – spike.md S11
+  - Ergebnisse eintragen; Abweichungen nur in der Plattformschicht oder den Defaults beheben.
+
+**Grenzen:** kein E2E unter Windows bis S11; `.cmd`/`.bat` werden nicht gestartet.
+**Checkpoint M2w:** Ergebnis S11 und `./gradlew mingwX64Test` unter Windows grün.
 
 ---
 
@@ -238,9 +291,9 @@ Reihenfolge innerhalb des Meilensteins je nach Ergebnis von 2.13.
 ## M8 – CI und Release v0.1.0
 
 - [ ] **8.1 CI vollständig** – R8.1, design §9
-  - macOS: Tests `macosArm64`, E2E mit mob und gitleaks (Homebrew). Ubuntu: Tests `linuxX64`, E2E (mob-Install-Skript, gitleaks-Release, Versionen gepinnt). E2E läuft zusätzlich einmal ohne gitleaks.
+  - macOS: Tests `macosArm64`, E2E mit mob und gitleaks (Homebrew). Ubuntu: Tests `linuxX64`, E2E (mob-Install-Skript, gitleaks-Release, Versionen gepinnt). E2E läuft zusätzlich einmal ohne gitleaks. Windows: siehe 2w.6, E2E nach S11.
 - [ ] **8.2 Release-Workflow**
-  - Tag `v*` → zwei `kmob-<version>-<target>.tar.gz` + SHA-256 als GitHub Release.
+  - Tag `v*` → `kmob-<version>-<target>.tar.gz` für macOS und Linux, `kmob-<version>-mingwX64.zip` für Windows, je + SHA-256 als GitHub Release.
 - [ ] **8.3 Manuelle Release-Checkliste** – design §8 „Manuell“
   - `/chat load` mit Leerzeichen im Pfad, Kette A→B→C mit drei Personen, Ctrl+C während `kmob next` und während `mob`.
 - [ ] **8.4 README finalisieren**

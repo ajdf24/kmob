@@ -42,6 +42,15 @@ wait "$pid"; rc=$?
 set -e
 check "Exit 130 (mob per SIGINT beendet)" [ "$rc" -eq 130 ]
 
+test_case "Startfehler eines Programms (tasks 2r.1)"
+BROKEN_MOB="$WORK/bin/broken-mob"
+printf '#!/nonexistent/interpreter\n' > "$BROKEN_MOB"; chmod +x "$BROKEN_MOB"
+set +e
+out="$(KMOB_MOB_BIN="$BROKEN_MOB" kmob status 2>&1)"; rc=$?
+set -e
+check "Exit 1" [ "$rc" -eq 1 ]
+check "Meldung cannot start" contains "$out" "kmob: cannot start $BROKEN_MOB: "
+
 test_case "echtes mob: version und status"
 out="$(kmob version 2>&1)"
 check "kmob-Version" contains "$out" "kmob "

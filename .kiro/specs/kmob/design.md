@@ -1,6 +1,6 @@
 # Design: kmob
 
-Status: v2 – basiert auf [requirements.md](requirements.md) v3 und [spike.md](spike.md) (S1–S9). Audit-Befunde (K…) sind in den betroffenen Abschnitten eingearbeitet.
+Status: v3 – basiert auf [requirements.md](requirements.md) v4 und [spike.md](spike.md) (S1–S11). Neu in v3: Schichtenarchitektur (§3), Windows (§5.9, R9). Audit-Befunde (K…) sind in den betroffenen Abschnitten eingearbeitet.
 
 ## 1. Überblick
 
@@ -34,90 +34,140 @@ sequenceDiagram
 
 | Thema | Entscheidung | Begründung |
 |---|---|---|
-| Sprache/Build | Kotlin Multiplatform-Plugin, nur Native-Targets `macosArm64`, `linuxX64`; Gradle mit Version Catalog | Anforderung; kein Windows, kein Intel-Mac (`macosX64` deprecated) |
+| Sprache/Build | Kotlin Multiplatform-Plugin, nur Native-Targets `macosArm64`, `linuxX64`, `mingwX64`; Gradle mit Version Catalog | Anforderung (R9); kein Intel-Mac (`macosX64` deprecated). `mingwX64` lässt sich auf macOS cross-kompilieren, Tests laufen nur unter Windows |
 | Argumente | **eigener kleiner Parser**, kein Clikt | kmob muss unbekannte Argumente unverändert und in Reihenfolge an mob weitergeben (R1.1, R1.7) |
 | Dateisystem | Okio (`FileSystem.SYSTEM`, in Tests `FakeFileSystem`) | Streaming großer Dateien (bis 133 MB, Spike S7), testbar |
 | JSON | kotlinx.serialization-json, nur `JsonElement`-API | Felder unbekannt/unverändert übernehmen (R7.1) |
 | Zeit | `kotlin.time.Instant` | ISO-Timestamps vergleichen |
-| Prozesse | eigene Abstraktion über `posix_spawnp` (platform.posix) | nicht in der Stdlib; ~150 Zeilen (s. 5.9) |
-| Pfade | `realpath(3)` über platform.posix | Symlink-Auflösung wie Kiro und Git (Spike S5) |
+| Prozesse | eigene Abstraktion: `posix_spawnp` (macOS, Linux), `CreateProcessW` (Windows), je ein kleiner C-Shim | nicht in der Stdlib (s. 5.9) |
+| Pfade | Okio-`Path` im Kern (trennerneutral); Auflösung in der Plattformschicht: `realpath(3)` bzw. `GetFinalPathNameByHandleW` | Symlink-Auflösung wie Kiro und Git (Spike S5); Windows: Junctions, kanonische Schreibweise |
 | Secret-Scan | **gitleaks** (externes Binary, optional) + eingebauter Minimal-Scanner als Fallback | gepflegte Regeln, Entropie, Allowlists, Team-Config; Go-Regex schnell auf großen Zeilen (Spike S8). Keine K/N-Bibliothek verfügbar, Portierung der Regeln (RE2 → K/N-Regex) nicht wartbar |
 | Tests | kotlin.test (Unit), Bash-Skript für E2E gegen echtes mob | E2E testet das echte Binary |
 
 Bibliotheksversionen werden beim Projekt-Setup auf die jeweils aktuelle stabile Version festgelegt und in `gradle/libs.versions.toml` gepinnt. gitleaks wird **nicht** mitgeliefert (Out of Scope); kmob ruft es nur auf.
 
-## 3. Projektstruktur und Komponenten
+## 3. Architektur
+
+### 3.1 Schichten (R10.1)
+
+```mermaid
+flowchart TB
+    subgraph Kern["Kern – commonMain, frei von Betriebssystem-Logik (R10.2)"]
+        CLI["cli<br/>Args, HelpText, KmobCli"]
+        APP["application<br/>Use Cases + Ports"]
+        DOM["domain<br/>Fachmodell, Regeln"]
+        ADP["adapter<br/>git, mob, kiro, secrets, state, console"]
+        PORT["platform (Ports)<br/>Platform, ProcessRunner"]
+        ROOT["App<br/>Verdrahtung"]
+    end
+    subgraph Plat["Plattformschicht – je Betriebssystem"]
+        NAT["nativeMain<br/>Main, ExecutableSearch, WindowsCommandLine"]
+        POSIX["posixMain<br/>PosixPlatform, PosixProcessRunner, posix.def"]
+        WIN["mingwMain<br/>WindowsPlatform, WindowsProcessRunner, windows.def"]
+    end
+    CLI --> APP --> DOM
+    ADP --> APP
+    ADP --> PORT
+    ROOT --> CLI & ADP
+    NAT --> ROOT
+    POSIX & WIN -. implementieren .-> PORT
+    NAT --> POSIX & WIN
+```
+
+| Schicht | Paket / Source-Set | Inhalt | darf abhängen von |
+|---|---|---|---|
+| Domäne | `de.kmob.domain.*` | `SessionInfo`, Kandidatenregel, `isWithin`, `SessionSelector`, `quotedTitle`, `isWipBranch`, `HandoverInfo`, `Snapshot`, `SecretRule`/`MandatoryRules`, `SecretMatcher`, `Hit`, Fehlerklassen | nur Domäne, Kotlin-Stdlib, kotlinx.serialization; von Okio nur der Werttyp `Path` |
+| Anwendung | `de.kmob.application.*` | Use Cases `HandOverSession` (next), `TakeOverSession` (start), `FinishMob` (done), `FirstHandoverNotice`, `KmobPaths`; Ports `MobCli`, `GitRepositories`/`GitRepository`, `SessionRepository`, `SecretScanner`, `ArtifactStore`, `LocalState`, `Console` (Zeit über `kotlin.time.Clock`) | Domäne; von Okio nur der Werttyp `Path` |
+| Adapter | `de.kmob.adapter.*` | `GitCli`, `MobBinary`, `SessionStore`, `SnapshotWriter`, `ArtifactFiles` + `ArtifactWriter`, `BuiltinScanner`, `FileLocalState`, `PlatformConsole` | Anwendung, Domäne, Plattform-Ports, Okio |
+| CLI | `de.kmob.cli` | `Args` (Parser), `HelpText`, `KmobCli` (Befehlsauswahl, Exit-Codes) | Anwendung, Domäne |
+| Plattform-Ports | `de.kmob.platform` (commonMain) | `Platform`, `ProcessRunner`, `Captured`, `ProcessStartException` | Domäne (Fehlerbasis) |
+| Verdrahtung | `de.kmob.App` (commonMain) | baut Adapter und Use Cases aus `Platform`, `ProcessRunner`, `FileSystem` | alles im Kern |
+| Plattformschicht | `nativeMain`, `posixMain`, `mingwMain` | Einstieg `main`, Implementierungen der Plattform-Ports, C-Shims | Kern, platform.posix / platform.windows, cinterop |
+
+`posixMain` ist ein eigenes Zwischen-Source-Set für `macosArm64` und `linuxX64`, `mingwMain` gilt für `mingwX64`. `nativeMain` enthält plattformneutrale Hilfen der Plattformschicht in reinem Kotlin (PATH-Suche mit Parametern, Windows-Kommandozeilen-Quoting). Sie lassen sich so auf dem Entwicklungsrechner testen, obwohl sie nur unter Windows gebraucht werden.
+
+### 3.2 Ports zum Betriebssystem
+
+```kotlin
+/** Startet externe Programme (mob, git, gitleaks, kiro-cli). */
+interface ProcessRunner {
+    /** Erbt stdin/stdout/stderr. Ctrl+C beendet das Kind, nicht kmob. Liefert den Exit-Code (POSIX: bei Signal 128 + n). */
+    fun runInherit(cmd: List<String>): Int
+    /** stdin leer, stdout und stderr eingesammelt (ohne Deadlock). */
+    fun runCapture(cmd: List<String>): Captured
+}
+data class Captured(val exitCode: Int, val stdout: String, val stderr: String)
+class ProcessStartException(message: String) : KmobException(message)   // "cannot start <prog>: <grund>"
+
+interface Platform {
+    val pathSeparator: Char                    // Trenner in Pfaden von realPath ('/' bzw. '\\'), für isWithin
+    fun env(name: String): String?
+    fun realPath(path: String): String?        // aufgelöst und kanonisch, null wenn nicht existent
+    fun isInteractive(): Boolean               // stdin und stderr sind ein Terminal / eine Konsole
+    fun readLine(): String?                    // null bei EOF
+    fun findInPath(binary: String): String?    // Suchregeln der Plattform (R9.2)
+    fun isExecutable(path: String): Boolean
+    fun homeDir(): String
+    fun now(): Instant
+    fun printOut(line: String)
+    fun printErr(line: String)
+}
+```
+
+Der Kern kennt keine Betriebssysteme, nur diese Fähigkeiten. Pfade baut er ausschließlich mit Okio (`root.toPath() / ".kmob"`). Der Pfadvergleich `isWithin` arbeitet auf den Zeichenketten von `realPath` mit dem Trenner `Platform.pathSeparator` (gleiches Verhalten wie M2 auf POSIX). Ein `cwd`-Parameter existiert bewusst nicht (K5-12): Git wird immer mit `-C <root>` aufgerufen, mob und gitleaks laufen im aktuellen Verzeichnis von kmob.
+
+### 3.3 Architekturprüfung (R10.3)
+
+Gradle-Task `checkArchitecture` (abhängig von `check`), ein einfacher Quelltext-Scan über `src/commonMain`:
+
+- Abhängigkeiten je Schicht nur zu den erlaubten Schichten laut Tabelle 3.1 – als Import und vollqualifiziert im Code (`de.kmob.<schicht>.…`).
+- Verboten im ganzen Kern (Import und vollqualifiziert): `platform.posix`, `platform.windows`, `kotlinx.cinterop`, `de.kmob.cinterop`, die Plattform-Pakete `de.kmob.platform.{posix,windows,support}`.
+- Okio außerhalb von Adaptern und Verdrahtung nur `okio.Path` (kein `FileSystem`, keine Streams, keine Wildcard-Imports).
+- Tokens im Code (Kommentare ausgenommen): `OsFamily`, `osFamily`, `"/dev/null"`, `"HOME"`, `"PATH"`, `"USERPROFILE"`, `'/'`, `'\\'`.
+- Verstöße werden mit Datei, Zeile und Regel gemeldet; der Build schlägt fehl.
+
+Selbsttest: `checkArchitectureSelfTest` lässt dieselben Regeln über `src/archTest/` laufen (bewusst verletzende Dateien, nicht kompiliert). Jede verletzende Zeile trägt `// expect: <regel>`; der Test schlägt fehl, wenn eine markierte Zeile nicht oder eine unmarkierte Zeile gemeldet wird.
+
+### 3.4 Clean-Code-Regeln (R10.5)
+
+- Eine Funktion erledigt einen Schritt; Abläufe (design §6) lesen sich als Folge benannter Schritte.
+- Namen aus der Fachsprache dieser Spec (Handover, Artefakt, Kandidat, WIP-Branch). Keine Abkürzungen außer `id`.
+- Pfade und Dateinamen (`.kmob`, `<git-dir>/kmob/tmp`, Merker) stehen an genau einer Stelle (`KmobPaths`).
+- Keine Nebenwirkung über Property-Zugriffe (`mob.ensureAvailable()` statt `mob.binary`).
+- Meldungstexte bleiben wörtlich wie in §7; Formatierungen (z. B. Titel auf erste Zeile, 80 Zeichen) gibt es nur einmal.
+- Fehler als `KmobException`-Unterklassen mit Exit-Code; kein stilles Verschlucken außer an den in der Spec genannten toleranten Stellen (R3.2, R7.2).
+- Kotlin-Namenskonventionen (camelCase); JSON-Feldnamen über `@SerialName`.
+
+### 3.5 Projektstruktur
 
 ```
 kmob/
 ├─ build.gradle.kts, settings.gradle.kts, gradle/libs.versions.toml
+├─ gradle/architecture.gradle.kts       checkArchitecture + Selbsttest (§3.3)
 ├─ src/
 │  ├─ commonMain/kotlin/de/kmob/
-│  │  ├─ Main.kt                    Einstieg, Verdrahtung, Exit-Code
-│  │  ├─ cli/Args.kt                Parser: Kommando, kmob-Optionen vs. mob-Argumente
-│  │  ├─ cli/Config.kt              Optionen + KMOB_*-Umgebungsvariablen
-│  │  ├─ cli/Commands.kt            Next, Start, Done, Version, Help, Passthrough
-│  │  ├─ mob/Mob.kt                 mob finden/aufrufen, `mob config` auswerten
-│  │  ├─ git/Git.kt                 alle Git-Aufrufe mit `git -C <root>`
-│  │  ├─ kiro/SessionStore.kt       Sessions lesen, Kandidaten filtern
-│  │  ├─ kiro/SessionSelector.kt    Auswahlregeln R2.6
-│  │  ├─ kiro/Snapshot.kt           konsistente Kopie von {id}.json/.jsonl
-│  │  ├─ kiro/ArtifactWriter.kt     Artefakt + Handover-Info atomar schreiben
-│  │  ├─ kiro/HandoverInfo.kt       .kmob/handover.json lesen/schreiben
-│  │  ├─ secrets/SecretScanner.kt   Interface + Auswahl
-│  │  ├─ secrets/GitleaksScanner.kt gitleaks-Aufruf, Config-Generierung
-│  │  ├─ secrets/BuiltinScanner.kt  Minimal-Regeln (R5.2)
-│  │  ├─ state/LocalState.kt        Merker im git-common-dir
-│  │  ├─ platform/ (expect)         Process, Paths, Env, Terminal, Signals
-│  │  └─ Output.kt                  Meldungen (Präfix "kmob:"), Debug
-│  ├─ nativeMain/kotlin/…           posix-Implementierungen (macOS + Linux)
-│  └─ commonTest/kotlin/…           Unit-Tests mit Fakes
-├─ e2e/run.sh                       End-to-End gegen Bare-Repo + echtes mob
+│  │  ├─ App.kt                         Verdrahtung
+│  │  ├─ cli/                           Args, HelpText, KmobCli
+│  │  ├─ application/                   HandOverSession, TakeOverSession, FinishMob, FirstHandoverNotice, KmobPaths
+│  │  ├─ application/port/Ports.kt      MobCli, GitRepositories, SessionRepository, SecretScanner, ArtifactStore, LocalState, Console
+│  │  ├─ domain/Errors.kt               KmobException, UsageException
+│  │  ├─ domain/session/                SessionInfo, SessionScan, isWithin, Selection, SessionSelector, quotedTitle
+│  │  ├─ domain/handover/               HandoverInfo, Snapshot, ExportException
+│  │  ├─ domain/secrets/                SecretRule, MandatoryRules, SecretMatcher, Hit, ScanOutcome, describeHits, SecretsFoundException
+│  │  ├─ domain/mob/                    isWipBranch
+│  │  ├─ adapter/{console,git,kiro,mob,secrets,state}/
+│  │  └─ platform/Ports.kt              Platform, ProcessRunner, Captured, ProcessStartException (3.2)
+│  ├─ nativeMain/kotlin/de/kmob/        Main.kt (expect hostPlatform/…), platform/support/{ExecutableSearch,WindowsCommandLine}
+│  ├─ posixMain/kotlin/de/kmob/         Host.kt (actual), platform/posix/{PosixPlatform,PosixProcessRunner}
+│  ├─ mingwMain/kotlin/de/kmob/         Host.kt (actual), platform/windows/{WindowsPlatform,WindowsProcessRunner}
+│  ├─ nativeInterop/cinterop/           posix.def (de.kmob.cinterop.posix), windows.def (de.kmob.cinterop.windows)
+│  ├─ commonTest/                       Unit- und Charakterisierungstests mit Fakes (Pakete wie commonMain)
+│  ├─ nativeTest/                       Tests der neutralen Plattformhilfen (laufen auf jedem Host)
+│  ├─ posixTest/, mingwTest/            Tests der echten Plattform-Implementierungen
+│  └─ archTest/                         bewusst verletzende Beispiele für den Selbsttest (nicht kompiliert)
+├─ e2e/run.sh                           End-to-End gegen Bare-Repo + echtes mob
 └─ .github/workflows/ci.yml, release.yml
 ```
-
-```mermaid
-flowchart LR
-    Main --> Args --> Config
-    Main --> Commands
-    Commands --> Mob
-    Commands --> Git
-    Commands --> Selector[SessionSelector]
-    Selector --> Store[SessionStore]
-    Commands --> Snapshot --> Scanner{{SecretScanner}}
-    Scanner --> Gitleaks[GitleaksScanner]
-    Scanner --> Builtin[BuiltinScanner]
-    Commands --> Writer[ArtifactWriter] --> Handover[HandoverInfo]
-    Commands --> State[LocalState]
-    Mob & Git & Gitleaks --> Proc[(ProcessRunner)]
-    Store & Snapshot & Writer & State --> FS[(Okio FileSystem)]
-    Commands --> Plat[(Platform)]
-```
-
-Alle Abhängigkeiten zu Betriebssystem und Umgebung laufen über Interfaces, die in `Main.kt` verdrahtet werden:
-
-```kotlin
-interface ProcessRunner {
-    /** erbt stdin/stdout/stderr; SIGINT im Kind auf Default (5.9) */
-    fun runInherit(cmd: List<String>): Int
-    /** stdin = /dev/null, stdout/stderr eingesammelt */
-    fun runCapture(cmd: List<String>): Captured
-}
-data class Captured(val exitCode: Int, val stdout: String, val stderr: String)
-
-interface Platform {
-    fun env(name: String): String?
-    fun realPath(path: String): String?        // null, wenn nicht existent
-    fun isInteractive(): Boolean               // isatty(stdin) && isatty(stderr)
-    fun readLine(): String?                    // null bei EOF
-    fun findInPath(binary: String): String?
-    fun isExecutable(path: String): Boolean
-    fun homeDir(): String
-    fun now(): Instant
-}
-```
-
-Ein `cwd`-Parameter existiert bewusst nicht (K5-12): Git wird immer mit `-C <root>` aufgerufen, mob und gitleaks laufen im aktuellen Verzeichnis von kmob.
 
 ## 4. Kommandozeile
 
@@ -377,11 +427,36 @@ Erst wenn Scan bestanden ist:
 
 Lesen tolerant: fehlende/ungültige Datei, fehlende Felder oder `artifact_bytes` ≠ tatsächliche Größe → nur Lade-Befehl ausgeben.
 
-### 5.9 Prozess-Abstraktion (posix, K5-02)
+### 5.9 Plattformschicht (K5-02, R9)
+
+**POSIX (macOS, Linux):**
 
 - `runInherit`: `posix_spawnp` ohne File-Actions (erbt Deskriptoren 0–2), `environ` unverändert. Mit `posix_spawnattr_setsigdefault({SIGINT, SIGQUIT})` und `POSIX_SPAWN_SETSIGDEF` startet mob mit Default-Signalbehandlung; kmob selbst ignoriert SIGINT/SIGQUIT nur, solange es auf mob wartet. Ctrl+C trifft mob (gleiche Prozessgruppe), kmob übernimmt dessen Exit-Code; bei Signal `128 + Signal`.
 - `runCapture`: `posix_spawnp` mit zwei Pipes (`posix_spawn_file_actions_adddup2`), stdin aus `/dev/null`, beide Pipes per `poll` lesen (kein Deadlock bei voller Pipe). Gleiche Signal-Attribute.
 - Während kmob selbst arbeitet (Snapshot, Scan), beendet Ctrl+C kmob normal. Es bleibt höchstens `<git-dir>/kmob/tmp/` zurück, das nicht committet wird und beim nächsten Lauf geleert wird.
+
+**Windows (`mingwX64`, R9):**
+
+| Port-Funktion | Umsetzung |
+|---|---|
+| `env` | `GetEnvironmentVariableW` (Unicode, R9.9) |
+| `realPath` | `CreateFileW` mit `FILE_FLAG_BACKUP_SEMANTICS` + `GetFinalPathNameByHandleW`; Präfix `\\?\` entfernen, `\\?\UNC\` → `\\` |
+| `isInteractive` | `GetConsoleMode` auf stdin und stderr erfolgreich (R9.6) |
+| `readLine` | Konsole: `ReadConsoleW`; sonst Bytes bis `\n` als UTF-8, `\r` entfernen |
+| `printOut`/`printErr` | Konsole: `WriteConsoleW` (UTF-16, unabhängig von der Codepage); sonst `WriteFile` mit UTF-8 (R9.7) |
+| `findInPath` | `ExecutableSearch` mit Trenner `;`, Endungen aus `PATHEXT` ∩ {`.COM`, `.EXE`} (Default `.COM;.EXE`), Anführungszeichen in `PATH`-Einträgen entfernt, kein aktuelles Verzeichnis (R9.2) |
+| `isExecutable` | reguläre Datei mit Endung `.exe`/`.com` (Groß/klein egal) |
+| `homeDir` | `USERPROFILE`, sonst `HOMEDRIVE` + `HOMEPATH`, sonst `C:\` |
+| `runInherit` | Programm über `findInPath` auflösen (kein Suchen im cwd), Kommandozeile mit `WindowsCommandLine.quote`, `CreateProcessW` mit vererbten Duplikaten der Standard-Handles (`STARTF_USESTDHANDLES`), warten, `GetExitCodeProcess`. Während des Wartens ein Konsolen-Handler, der Ctrl+C/Ctrl+Break für kmob verschluckt (nur Handler-Routinen werden nicht vererbt, das Kind behält die Default-Behandlung, R9.8) |
+| `runCapture` | wie oben, aber `CREATE_NO_WINDOW` und ohne Ctrl+C-Handler (Ctrl+C beendet kmob und git gemeinsam, wie unter POSIX); stdin = `NUL`, stdout/stderr über zwei anonyme Pipes, gelesen von zwei Threads im C-Shim (kein Deadlock). Scheitert ein Thread oder Speicher, bricht der Aufruf als Startfehler ab, ohne zu hängen |
+
+`WindowsCommandLine.quote(args)` (R9.3): Argument ohne Leerzeichen, Tab, `"` und nicht leer → unverändert; sonst in `"` einschließen, `n` Backslashes vor `"` → `2n+1` Backslashes + `"`, `n` Backslashes am Ende → `2n`. Unit-Test: Roundtrip gegen eine Referenz-Implementierung von `CommandLineToArgvW` (in `nativeTest`), unter Windows zusätzlich echt über einen Kindprozess (`mingwTest`).
+
+`ExecutableSearch` ist reines Kotlin mit zwei Konfigurationen, `ExecutableSearch.POSIX` (Trenner `:`, keine Endungen) und `ExecutableSearch.windows(pathExt)`; `find(name, pathValue, isExecutable)`. Name mit Pfadtrenner oder Laufwerk → nur dieser Pfad.
+
+Argumente von kmob selbst (R9.3, R9.9): unter Windows aus `GetCommandLineW` + `CommandLineToArgvW` statt aus `main(args)`, damit Nicht-ASCII unabhängig von der Codepage ankommt. `mingwTest` prüft `WindowsCommandLine.quote` per Roundtrip gegen das echte `CommandLineToArgvW`.
+
+Exit-Codes unter Windows: unverändert vom Kind (32 Bit, z. B. `0xC000013A` nach Ctrl+C). `exitProcess` gibt sie unverändert weiter.
 
 ### 5.10 LocalState (R5.1, R5.7, K1-08)
 
@@ -586,6 +661,12 @@ flowchart TD
 - HandoverInfo: tolerant lesen, `artifact_bytes`-Abgleich.
 - Start mit Kiro: alle Zweige aus 6.2 (innerhalb Kiro, `--no-kiro`, Env true/false, kein TTY, Frage Y/Enter/n/EOF, kiro-cli fehlt), Argument genau `["chat", "/chat load <abs>"]`, Exit-Code = mob start.
 
+**Charakterisierung vor Refactorings (R10.4):** Für jeden Ablauf aus §6 gibt es Tests über die öffentliche Kante `App(platform, runner, fs).run(args)` mit Fakes: vollständige stderr-/stdout-Zeilen, Exit-Code, Prozessaufrufe (Reihenfolge und Argumente), Dateien in `.kmob/` und im git-dir (inkl. exaktem Inhalt von `handover.json`). Beim Refactoring dürfen sich nur Konstruktion und Imports der Tests ändern.
+
+**Architektur:** `checkArchitecture` (§3.3) läuft in `./gradlew check`.
+
+**Plattform:** `nativeTest`: `ExecutableSearch` (beide Konventionen), `WindowsCommandLine` (Leerzeichen, `"`, Backslashes vor `"` und am Ende, leere Argumente, Unicode; Roundtrip). `posixTest`: wie bisher (Symlinks, Exit-Codes, Signale, 64-KB-Deadlock). `mingwTest` (nur Windows, CI): `realPath` mit Junction und anderer Schreibweise, `findInPath` mit `PATHEXT`, Argumente per Kindprozess verbatim, Exit-Codes, großer Output auf beiden Pipes, stdin `NUL`, Startfehler.
+
 **E2E (`e2e/run.sh`, echtes mob + gebautes Binary):** Bare-Repo + Clones A/B, Fake-Session-Verzeichnis über `KMOB_KIRO_SESSIONS_DIR`, `MOB_TIMER_LOCAL=false`, `KMOB_YES=true` außer in den Bestätigungstests. Läuft einmal mit gitleaks im `PATH` und einmal ohne.
 1. A: `kmob start`, Fixture mit `cwd` = Clone A, `kmob next` **aus einem Unterverzeichnis** → `<root>/.kmob/` im WIP-Branch, Inhalt = erwarteter Export (K1-01).
 2. B: `kmob start` → Ausgabe enthält absoluten `/chat load`-Pfad und Titel.
@@ -610,7 +691,9 @@ flowchart TD
 - **CI** (`.github/workflows/ci.yml`, bei Push/PR):
   - `macos-latest`: Tests `macosArm64`, E2E (mob und gitleaks über Homebrew).
   - `ubuntu-latest`: Tests `linuxX64`, E2E (mob über offizielles Install-Skript, gitleaks-Release-Binary; Versionen gepinnt).
-- **Release** (`release.yml`, bei Tag `v*`): Binaries für beide Targets als `kmob-<version>-<target>.tar.gz` + SHA-256 an GitHub Release. Die macOS-Binaries sind in v0.1 nicht signiert/notarisiert; die Doku beschreibt `xattr -d com.apple.quarantine` (K4-06). Signierung ist ein späterer Ausbau.
+  - `windows-latest`: `./gradlew mingwX64Test checkArchitecture` und Release-Binary bauen. E2E unter Windows folgt nach Spike S11.
+  - Zusätzlich auf macOS: `linkReleaseExecutableMingwX64` (Cross-Build), damit Windows-Kompilierfehler auch lokal auffallen.
+- **Release** (`release.yml`, bei Tag `v*`): Binaries für macOS und Linux als `kmob-<version>-<target>.tar.gz`, Windows als `kmob-<version>-mingwX64.zip` (R9.10), jeweils + SHA-256 an GitHub Release. Die macOS-Binaries sind in v0.1 nicht signiert/notarisiert; die Doku beschreibt `xattr -d com.apple.quarantine` (K4-06). Signierung ist ein späterer Ausbau.
 
 ## 10. Nachverfolgung Requirements → Design
 
@@ -631,6 +714,8 @@ flowchart TD
 | R6.1–R6.4 | 4.1, 5.1, 5.3, 5.6 |
 | R7.1–R7.3 | 4.1, 5.3, 5.5 |
 | R8.1–R8.5 | 6.4, 8, 9 |
+| R9.1–R9.10 | 3.2, 5.9, 9 |
+| R10.1–R10.5 | 3, 8 |
 
 ## 11. Risiken
 
@@ -643,4 +728,6 @@ flowchart TD
 | gitleaks nur noch Security-Patches (Autor wechselt zu Betterleaks) | Regeln veralten langfristig | Scanner hinter Interface; Wechsel auf kompatiblen Nachfolger ohne Design-Änderung |
 | Scan-Dauer bei großen Sessions (~10 s / 130 MB) | langsames `next` | Fortschrittshinweis ab 10 MB |
 | Gemischtes Team: jemand nutzt `mob done` | `.kmob/` im Ergebnis | Doku; nächstes `kmob done` meldet bzw. erkennt den Rest (6.3) |
+| Windows-Spezifika ungeprüft (Session-Verzeichnis, `cwd`-Format, CRLF, mob unter Windows) | Session nicht gefunden oder Übergabe scheitert | Spike S11 vor Freigabe für Windows; `KMOB_KIRO_SESSIONS_DIR`; Unit-Tests der Plattformschicht in CI |
+| Refactoring ändert Verhalten unbemerkt | Regression | Charakterisierungstests vorher (R10.4), E2E unverändert grün |
 | mob ändert CLI oder `mob config`-Format | Parser/doneMode falsch | doneMode fail-closed (`UNKNOWN` → Bestätigung); E2E in CI |

@@ -1,6 +1,6 @@
 # Requirements: kmob
 
-Status: v3 – Spec-Audit, gitleaks-Spike (S8) und Nachtests (S9) aus [spike.md](spike.md) eingearbeitet
+Status: v4 – Windows-Unterstützung (R9) und Schichtenarchitektur (R10) ergänzt; v3: Spec-Audit, gitleaks-Spike (S8) und Nachtests (S9) aus [spike.md](spike.md)
 
 ## Einleitung
 
@@ -23,7 +23,7 @@ Teams, die mit mob.sh im Mob programmieren, verlieren beim Driver-Wechsel (`mob 
 ## Rahmenbedingungen
 
 - Kotlin/Native, Ausgabe als natives Binary ohne JVM-Abhängigkeit.
-- Zielplattformen: macOS arm64, Linux x64. **Kein Windows, kein Intel-Mac** (Kotlin/Native-Target `macosX64` ist deprecated, im Team nicht genutzt).
+- Zielplattformen: macOS arm64, Linux x64, **Windows x64** (Windows 10/11, R9). **Kein Intel-Mac** (Kotlin/Native-Target `macosX64` ist deprecated, im Team nicht genutzt), kein Windows ARM64.
 - Keine Änderung an mob.sh; Integration ausschließlich über Aufruf des `mob`-Binaries, von `git` und optional `gitleaks`.
 - Keine Netzwerkzugriffe durch kmob selbst (Transport ausschließlich über Git via mob).
 - Kompatibel getestet mit kiro-cli 2.21.1, mob 5.4.2 und gitleaks 8.30.1.
@@ -132,9 +132,35 @@ Hinweis: In eine **laufende** Kiro-Session kann kmob nicht laden, da `/chat load
 4. `kmob version` SOLL die eigene Version und die Ausgabe von `mob version` ausgeben, dazu die gitleaks-Version oder „gitleaks not found“.
 5. `kmob help` SOLL die kmob-Optionen beschreiben und anschließend die Hilfe von `mob` ausgeben.
 
+### R9 – Windows
+
+**User Story:** Als Teammitglied unter Windows möchte ich kmob genauso nutzen wie meine Kolleg:innen unter macOS und Linux.
+
+1. kmob SOLL unter Windows 10/11 x64 (PowerShell, cmd, Windows Terminal) dasselbe Verhalten zeigen wie unter macOS und Linux (R1–R8), soweit dieser Abschnitt nichts anderes festlegt. Unter WSL gilt das Linux-Binary.
+2. Programmsuche (mob, git, gitleaks, kiro-cli): `PATH` mit `;` getrennt, Endungen laut `PATHEXT`, davon nur `.exe` und `.com`. Das aktuelle Verzeichnis SOLL nicht durchsucht werden (anders als `CreateProcess`), damit kein Programm aus dem Repo gestartet wird. `KMOB_*_BIN` SOLL auf eine `.exe`/`.com` zeigen; `.cmd`/`.bat` werden nicht unterstützt.
+3. Argumente SOLLEN unverändert beim Kindprozess ankommen (R1.1), auch mit Leerzeichen, Anführungszeichen, Backslashes, leeren Argumenten und Nicht-ASCII-Zeichen (Quoting nach den Regeln der Microsoft-C-Runtime / `CommandLineToArgvW`).
+4. Pfade mit Laufwerksbuchstaben, `\` oder `/` als Trenner und UNC-Pfade SOLLEN unterstützt werden. Der Pfadvergleich aus R2.4 SOLL auf vom Betriebssystem aufgelösten Pfaden erfolgen (Symlinks, Junctions, kanonische Groß-/Kleinschreibung).
+5. Home-Verzeichnis ist `%USERPROFILE%`; das Default-Session-Verzeichnis ist damit `%USERPROFILE%\.kiro\sessions\cli` (zu bestätigen, Spike S11). `KMOB_KIRO_SESSIONS_DIR` gilt wie auf den anderen Plattformen.
+6. Interaktiv (R5.1, R2.6.2, R3.5, R4.3) ist kmob, wenn stdin und stderr Konsolen sind. In Terminals ohne Windows-Konsole (z. B. mintty/Git Bash ohne winpty) gilt kmob als nicht interaktiv; dann gelten die Regeln „ohne Terminal“ (`--yes`, Lade-Befehl).
+7. Meldungen SOLLEN in der Konsole unabhängig von der eingestellten Codepage korrekt erscheinen (z. B. `–`, Umlaute). Umgeleitete Ausgabe ist UTF-8.
+8. Ctrl+C während `mob` oder `kiro-cli` läuft SOLL das Kind beenden; kmob wartet und endet mit dessen Exit-Code (unverändert, z. B. `0xC000013A`).
+9. Umgebungsvariablen, Pfade und Argumente mit Nicht-ASCII-Zeichen SOLLEN korrekt verarbeitet werden (Unicode-APIs).
+10. Das Release SOLL `kmob.exe` als `kmob-<version>-mingwX64.zip` enthalten.
+
+### R10 – Architektur und Wartbarkeit
+
+**User Story:** Als Entwickler:in möchte ich den Code schnell verstehen und gefahrlos ändern können, und neue Plattformen sollen den fachlichen Kern nicht berühren.
+
+1. Der Code SOLL in Schichten gegliedert sein: Domäne, Anwendung (Use Cases und Ports), Adapter, CLI und Plattform (design §3). Abhängigkeiten zeigen nur nach innen zur Domäne.
+2. Alle Schichten außer der Plattform-Implementierung („Kern“, Source-Set `commonMain`) SOLLEN frei von Betriebssystem-Logik sein: keine Plattform-APIs (POSIX, Win32, cinterop), keine Logik zu Pfadtrennern, `PATH`, Home-Verzeichnis, Terminal oder Signalen und keine Fallunterscheidung nach Betriebssystem. Der Kern erreicht das Betriebssystem nur über die Ports `Platform` und `ProcessRunner`.
+3. Die Regeln aus R10.1 und R10.2 SOLLEN im Build automatisch geprüft werden (`./gradlew checkArchitecture`, Teil von `./gradlew check`).
+4. Ein Refactoring SOLL das fachliche Verhalten nicht ändern. Vorher SOLLEN Charakterisierungstests das bestehende Verhalten (Ausgaben, Exit-Codes, Dateien, Prozessaufrufe) festhalten; ihre Assertions bleiben beim Refactoring unverändert, nur der Aufbau der Testobjekte darf sich anpassen.
+5. Der Code SOLL den Clean-Code-Regeln aus design §3.4 folgen.
+
 ## Out of Scope (v1)
 
-- Windows.
+- Windows ARM64; `.cmd`/`.bat` als mob, git, gitleaks oder kiro-cli (R9.2).
+- Eigene E2E-Läufe unter Windows (Unit-Tests der Windows-Plattformschicht laufen in CI, E2E folgt nach Spike S11).
 - Andere KI-Tools als Kiro CLI (Architektur soll Erweiterung aber nicht verbauen).
 - Das zweite Kiro-Session-Format unter `~/.kiro/sessions/<hash>/sess_*/` (Spike S9).
 - Automatisches Laden der Session in eine bereits laufende Kiro-Session.
@@ -149,7 +175,7 @@ Hinweis: In eine **laufende** Kiro-Session kann kmob nicht laden, da `/chat load
 
 | Frage | Entscheidung |
 |---|---|
-| Windows | nein |
+| Windows | ja, x64 (Entscheidung 2026-10-30, R9); vorher „nein“ |
 | Intel-Mac (`macosX64`) | nein (deprecated in Kotlin 2.4, nicht genutzt) |
 | Exportformat | per Spike verifiziert (S1, S2) |
 | Fortgeführte Session weitergeben | ja (S2) |
@@ -160,4 +186,5 @@ Hinweis: In eine **laufende** Kiro-Session kann kmob nicht laden, da `/chat load
 | Erst-Hinweis (Audit K1-08) | Bestätigung vor dem ersten Push, je Clone |
 | kmob-Optionen bei Passthrough-Befehlen (Audit K1-10) | nicht auswerten |
 | Secret-Scanner | gitleaks, falls vorhanden; sonst eingebauter Minimal-Scanner (S8) |
+| Architektur | Schichten mit OS-freiem Kern, Plattformschicht je Betriebssystem, im Build geprüft (R10) |
 | Kiro direkt starten bei `kmob start` | ja, außerhalb von Kiro mit Rückfrage `[Y/n]`; `--kiro`/`--no-kiro`, `KMOB_START_KIRO` (S10) |
