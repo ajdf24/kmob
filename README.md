@@ -23,7 +23,7 @@ Die Alpha kann bereits übergeben, übernehmen und aufräumen (`kmob next`/`star
 - `kmob done`: Der Done-Modus (`--no-squash`, `--squash-wip`) wird nicht geprüft, und nach einem fehlgeschlagenen `mob done` wird nichts wiederhergestellt.
 - Als Optionen gibt es nur `--yes` und `--debug` (bzw. `KMOB_YES`/`KMOB_DEBUG`). Getestet ist nur macOS (Apple Silicon). Das Linux-Binary ist noch ungetestet. Das Windows-Binary (`kmob.exe`) wird gebaut, auf einem Windows-Rechner aber erst noch geprüft ([Spike S11](.kiro/specs/kmob/spike.md)).
 
-Für den Teamtest: Binary mit `./gradlew linkReleaseExecutableMacosArm64` bauen (Ergebnis `build/bin/macosArm64/releaseExecutable/kmob.kexe`) und als `kmob` in den `PATH` legen.
+Für den Teamtest: das signierte und notarisierte `kmob-<version>-macosArm64.tar.gz` aus `./scripts/sign-macos.sh` verteilen (siehe [Entwicklung](#entwicklung)) oder selbst mit `./gradlew linkReleaseExecutableMacosArm64` bauen (Ergebnis `build/bin/macosArm64/releaseExecutable/kmob.kexe`) und als `kmob` in den `PATH` legen.
 
 ## Voraussetzungen
 
@@ -39,7 +39,6 @@ Lade das Binary für deine Plattform von den [GitHub Releases](https://github.co
 
 ```bash
 tar -xzf kmob-<version>-macosArm64.tar.gz
-xattr -d com.apple.quarantine kmob   # nur macOS: Binary ist nicht signiert
 mv kmob /usr/local/bin/
 kmob version
 ```
@@ -204,7 +203,10 @@ Die Session wird **ins Git-Remote gepusht**, und zwar vollständig: deine Prompt
 ./gradlew build          # bauen, Unit-Tests (Host-Plattform), Architekturprüfung (checkArchitecture)
 ./gradlew linkReleaseExecutableMingwX64   # Windows-Binary (auch auf macOS), Tests dafür nur unter Windows
 ./e2e/run.sh             # End-to-End gegen lokales Bare-Repo (mob erforderlich, gitleaks optional)
+./scripts/sign-macos.sh  # macOS-Binary signieren + notarisieren → build/dist/kmob-<version>-macosArm64.tar.gz
 ```
+
+Das macOS-Binary ist mit einer Developer ID signiert und von Apple notarisiert. Es startet deshalb auch nach einem Download im Browser ohne `xattr`. Beim ersten Start fragt macOS das Notarisierungs-Ticket online ab. Zum Signieren braucht `scripts/sign-macos.sh` einmalig ein Zertifikat „Developer ID Application“ im Schlüsselbund und ein Notary-Profil (`xcrun notarytool store-credentials kmob-notary --apple-id … --team-id …`).
 
 Aufbau: Der Kern (`src/commonMain`) ist in Domäne, Anwendung, Adapter und CLI geschichtet und enthält keine Betriebssystem-Logik. Diese steckt in `posixMain` (macOS, Linux) und `mingwMain` (Windows), siehe [design §3](.kiro/specs/kmob/design.md#3-architektur).
 

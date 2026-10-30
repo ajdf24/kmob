@@ -295,11 +295,12 @@ Reihenfolge innerhalb des Meilensteins je nach Ergebnis von 2.13.
 - [ ] **8.1 CI vollständig** – R8.1, design §9
   - macOS: Tests `macosArm64`, E2E mit mob und gitleaks (Homebrew). Ubuntu: Tests `linuxX64`, E2E (mob-Install-Skript, gitleaks-Release, Versionen gepinnt). E2E läuft zusätzlich einmal ohne gitleaks. Windows: siehe 2w.6, E2E nach S11.
 - [ ] **8.2 Release-Workflow**
+  - macOS-Binary signieren + notarisieren wie `scripts/sign-macos.sh` (Secrets: Zertifikat als `.p12` + Passwort, Notary-Zugang).
   - Tag `v*` → `kmob-<version>-<target>.tar.gz` für macOS und Linux, `kmob-<version>-mingwX64.zip` für Windows, je + SHA-256 als GitHub Release.
 - [ ] **8.3 Manuelle Release-Checkliste** – design §8 „Manuell“
   - `/chat load` mit Leerzeichen im Pfad, Kette A→B→C mit drei Personen, Ctrl+C während `kmob next` und während `mob`.
 - [ ] **8.4 README finalisieren**
-  - Status-Hinweis entfernen, Installationsweg anhand des echten Release-Artefakts prüfen (inkl. `xattr`).
+  - Status-Hinweis entfernen, Installationsweg anhand des echten Release-Artefakts prüfen (Download per Browser, Start ohne `xattr`).
 - [ ] **8.5 Release v0.1.0**
 
 ---
@@ -310,4 +311,4 @@ Aus der Stabilitätsbewertung, priorisiert nach dem Teamtest in M2:
 - Zusammenfassung statt voller Historie ab einer bestimmten Session-Größe (Kontextlimit beim Empfänger).
 - Feature-Request bei Kiro: offizieller Export und Import außerhalb des Chats (`kiro-cli chat --export`). Das würde die Abhängigkeit vom internen Format beseitigen.
 - Unterstützung des zweiten Kiro-Session-Formats (`sess_*`, Spike S9), falls Kiro dorthin migriert.
-- Signierte und notarisierte macOS-Binaries, Homebrew-Tap.
+- Homebrew-Tap. (Signierte und notarisierte macOS-Binaries: erledigt mit `scripts/sign-macos.sh`, Übernahme in den Release-Workflow in 8.2.)

@@ -693,7 +693,7 @@ flowchart TD
   - `ubuntu-latest`: Tests `linuxX64`, E2E (mob über offizielles Install-Skript, gitleaks-Release-Binary; Versionen gepinnt).
   - `windows-latest`: `./gradlew mingwX64Test checkArchitecture` und Release-Binary bauen. E2E unter Windows folgt nach Spike S11.
   - Zusätzlich auf macOS: `linkReleaseExecutableMingwX64` (Cross-Build), damit Windows-Kompilierfehler auch lokal auffallen.
-- **Release** (`release.yml`, bei Tag `v*`): Binaries für macOS und Linux als `kmob-<version>-<target>.tar.gz`, Windows als `kmob-<version>-mingwX64.zip` (R9.10), jeweils + SHA-256 an GitHub Release. Die macOS-Binaries sind in v0.1 nicht signiert/notarisiert; die Doku beschreibt `xattr -d com.apple.quarantine` (K4-06). Signierung ist ein späterer Ausbau.
+- **Release** (`release.yml`, bei Tag `v*`): Binaries für macOS und Linux als `kmob-<version>-<target>.tar.gz`, Windows als `kmob-<version>-mingwX64.zip` (R9.10), jeweils + SHA-256 an GitHub Release. Das macOS-Binary wird mit „Developer ID Application“ signiert (Hardened Runtime, Zeitstempel, Identifier `de.kmob.kmob`) und notarisiert, damit es nach einem Browser-Download ohne `xattr` startet (K4-06, Entscheidung 2026-10-30). Ein Ticket lässt sich an ein einzelnes Binary nicht anheften; Gatekeeper prüft es beim ersten Start online. Bis zum Release-Workflow lokal mit `scripts/sign-macos.sh` (Schlüsselbund + Notary-Profil `kmob-notary`); im Workflow später über GitHub-Secrets (`.p12` + Passwort, Notary-Zugang) in einem temporären Schlüsselbund.
 
 ## 10. Nachverfolgung Requirements → Design
 
